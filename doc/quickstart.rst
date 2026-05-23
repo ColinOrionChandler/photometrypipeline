@@ -162,6 +162,9 @@ the ``OBJECT`` header keyword, as well as one rather bright 'control
 star' that is used to check the consistency of the photometric
 calibration. Results are written to files
 ``photometry_<objectname>.dat`` in the respective filter directory.
+The Source Extractor catalogs are kept as ``*.ldac`` files, and PP
+also writes ``*.ldac.csv`` sidecars for quick inspection with standard
+table tools.
 
 
 Although PP is designed to run mostly automatically, some common sense

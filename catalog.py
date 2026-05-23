@@ -36,6 +36,7 @@ import astropy.coordinates as coord
 from astropy.table import Table, Column
 from astropy import __version__ as astropyversion
 from astropy.io import fits
+from astropy.wcs import WCS
 import scipy.optimize as optimization
 import warnings
 warnings.simplefilter("ignore", UserWarning)
@@ -344,7 +345,7 @@ class catalog(object):
             try:
                 self.data = vquery.query_region(field,
                                                 radius=rad_deg*u.deg,
-                                                catalog="I/345/gaia2",
+                                                catalog="I/350/gaiaedr3",
                                                 cache=False)[0]
             except IndexError:
                 if self.display:
@@ -776,19 +777,63 @@ class catalog(object):
             self.reject_sources_other_than(self.data['FLAGS'] <= maxflag)
             # FLAGS <= 3: allow for blending and nearby sources
 
+        fitsheader = None
+
         # read data from image header, if requested
         if fits_filename is not None:
-            fitsheader = fits.open(fits_filename,
-                                   ignore_missing_end=True)[0].header
-            self.obstime[0] = float(fitsheader[time_keyword])
-            self.obstime[1] = float(fitsheader[exptime_keyword])
-            self.obj = fitsheader[object_keyword]
+            with fits.open(fits_filename, ignore_missing_end=True) as hdulist:
+                fitsheader = hdulist[0].header.copy()
+            try:
+                self.obstime[0] = float(fitsheader[time_keyword])
+            except KeyError:
+                logging.debug('keyword %s not found in %s',
+                              time_keyword, fits_filename)
+            try:
+                self.obstime[1] = float(fitsheader[exptime_keyword])
+            except KeyError:
+                logging.debug('keyword %s not found in %s',
+                              exptime_keyword, fits_filename)
+            try:
+                self.obj = fitsheader[object_keyword]
+            except KeyError:
+                logging.debug('keyword %s not found in %s',
+                              object_keyword, fits_filename)
 
         # rename columns
         if 'XWIN_WORLD' in self.fields:
             self.data.rename_column('XWIN_WORLD', 'ra_deg')
         if 'YWIN_WORLD' in self.fields:
             self.data.rename_column('YWIN_WORLD', 'dec_deg')
+
+        if (fitsheader is not None and
+                {'XWIN_IMAGE', 'YWIN_IMAGE'} <= set(self.fields)):
+            # Source Extractor does not fully understand some modern WCS
+            # conventions (for example DECam TPV); Astropy does.
+            try:
+                if 'ra_deg' in self.fields:
+                    self.data['ra_deg_sextractor'] = self.data['ra_deg']
+                if 'dec_deg' in self.fields:
+                    self.data['dec_deg_sextractor'] = self.data['dec_deg']
+
+                wcs = WCS(fitsheader)
+                ra_deg, dec_deg = wcs.all_pix2world(
+                    np.asarray(self.data['XWIN_IMAGE'], dtype=float),
+                    np.asarray(self.data['YWIN_IMAGE'], dtype=float),
+                    1)
+                if 'ra_deg' in self.fields:
+                    self.data['ra_deg'] = ra_deg
+                else:
+                    self.add_field('ra_deg', ra_deg)
+                if 'dec_deg' in self.fields:
+                    self.data['dec_deg'] = dec_deg
+                else:
+                    self.add_field('dec_deg', dec_deg)
+                logging.info('recomputed LDAC source coordinates for %s '
+                             'from FITS WCS in %s', filename, fits_filename)
+            except Exception as exc:
+                logging.warning('could not recompute LDAC coordinates for '
+                                '%s from %s: %s',
+                                filename, fits_filename, exc)
 
         # force positive RA values
         flip_idc = np.where(self.data['ra_deg'] < 0)[0]
@@ -890,6 +935,31 @@ class catalog(object):
         self.data.write(filename, format=format)
 
         logging.info('wrote %d sources from %s to file %s' %
+                     (self.shape[0], self.catalogname, filename))
+
+        return self.shape[0]
+
+    def write_csv(self, filename):
+        """
+        write catalog data to CSV, flattening vector-valued LDAC columns
+        """
+
+        write_table = Table()
+        for colname in self.data.colnames:
+            column = self.data[colname]
+            values = np.asarray(column)
+            if values.ndim <= 1:
+                write_table[colname] = column
+                continue
+
+            flat_values = values.reshape((len(column), -1))
+            for idx in range(flat_values.shape[1]):
+                write_table['{:s}_{:02d}'.format(colname, idx+1)] = (
+                    flat_values[:, idx])
+
+        write_table.write(filename, format='csv', overwrite=True)
+
+        logging.info('wrote %d sources from %s to CSV file %s' %
                      (self.shape[0], self.catalogname, filename))
 
         return self.shape[0]
@@ -1713,8 +1783,9 @@ class catalog(object):
         indices = list(zip(indices_this_catalog, indices_other_catalog))
         # check if element is either not nan or not a float
 
-        def check_not_nan(x): return not np.isnan(x) if \
-            (type(x) is np.float_) else True
+        def check_not_nan(x):
+            return not np.isnan(x) if isinstance(x, (float, np.floating)) \
+                else True
 
         indices = [i for i in indices if all([check_not_nan(self[i[0]][key])
                                               for key in extract_this_catalog]

@@ -156,6 +156,7 @@ def extract_singleframe(data):
     # read in LDAC file
     ldac_filename = filename[:filename.find('.fit')]+'.ldac'
     ldac_data = catalog(ldac_filename)
+    obsparam = param['obsparam']
 
     if not os.path.exists(ldac_filename):
         print('No Source Extractor output for frame', filename)
@@ -163,16 +164,24 @@ def extract_singleframe(data):
         return None
 
     # make sure ldac file contains data
-    if ldac_data.read_ldac(ldac_filename, maxflag=None) is None:
+    if ldac_data.read_ldac(ldac_filename, filename, maxflag=None,
+                           object_keyword=obsparam['object'],
+                           exptime_keyword=obsparam['exptime'],
+                           time_keyword='MIDTIMJD') is None:
         print('LDAC file empty', filename, end=' ')
-        logging.error('LDAC file empty: ' + sex_output)
+        logging.error('LDAC file empty after command: ' + commandline)
         return None
+
+    try:
+        ldac_data.write_csv(ldac_filename+'.csv')
+    except Exception as exc:
+        logging.warning('could not write CSV copy of %s: %s',
+                        ldac_filename, exc)
 
     out['catalog_data'] = ldac_data
 
     # update image header with aperture radius and other information
     hdu = fits.open(filename, mode='update', ignore_missing_end=True)
-    obsparam = param['obsparam']
     # observation midtime
     if obsparam['obsmidtime_jd'] in hdu[0].header:
         midtimjd = hdu[0].header[obsparam['obsmidtime_jd']]

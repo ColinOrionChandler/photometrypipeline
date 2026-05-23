@@ -4,6 +4,13 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-05-23: imported local telescope/configuration updates, including
+  DECam support; ``pp_run`` now passes through ``-telescope``,
+  ``-nodeblending``, and ``-variable_stars``; LDAC source coordinates are
+  recomputed from the FITS WCS when available, which is important for TPV
+  headers used with ``-keep_wcs``; extraction also writes ``*.ldac.csv``
+  inspection files
+
 * 2018-12-02: major overhaul of diagnostic output
 
 * 2018-11-23: implementation of ``pp_setup.py``, which will eventually
@@ -49,6 +56,5 @@ documented here.
   
 .. _Mommert 2017: http://adsabs.harvard.edu/abs/2017A%26C....18...47M
 .. _Pan-STARRS DR1: http://panstarrs.stsci.edu/
-
 
 

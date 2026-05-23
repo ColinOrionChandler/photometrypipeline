@@ -60,6 +60,16 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     datefmt=_pp_conf.log_datefmt)
 
 
+def _jd_plot_label(jd_value):
+    """Format a JD value for plot labels, falling back cleanly on bad inputs."""
+    try:
+        return Time(float(jd_value), format='jd').to_value(
+            'iso', subfmt='date_hm')
+    except (TypeError, ValueError) as exc:
+        logging.warning('Could not format JD value %r: %s', jd_value, exc)
+        return 'JD %s' % jd_value
+
+
 class Diagnostics_Html():
     """basis class for building pp html diagnostic output"""
 
@@ -665,7 +675,8 @@ class Photometry_Diagnostics(Diagnostics_Html):
                                      '.diagnostics',
                                      'fwhm.'+self.conf.image_file_format)
 
-        frame_midtimes = np.array([frame['time'] for frame in extraction])
+        frame_midtimes = np.array([float(frame['time'])
+                                   for frame in extraction])
         fwhm = [np.median(frame['catalog_data']['FWHM_IMAGE'])
                 for frame in extraction]
         fwhm_sig = [np.std(frame['catalog_data']['FWHM_IMAGE'])
@@ -675,7 +686,7 @@ class Photometry_Diagnostics(Diagnostics_Html):
 
         ax.set_title('Median PSF FWHM per Frame')
         ax.set_xlabel('Minutes after {:s} UT'.format(
-            Time(frame_midtimes.min(), format='jd').to_value('iso', subfmt='date_hm')))
+            _jd_plot_label(frame_midtimes.min())))
         ax.set_ylabel('Point Source FWHM (px)')
         ax.scatter((frame_midtimes-frame_midtimes.min())*1440,
                    fwhm, marker='o',
@@ -795,7 +806,7 @@ class Calibration_Diagnostics(Diagnostics_Html):
         ax.errorbar((times-times.min())*1440, zp, yerr=zperr, linestyle='',
                     color='blue', marker='s', capsize=3)
         ax.set_xlabel('Minutes after {:s} UT'.format(
-            Time(times.min(), format='jd').to_value('iso', subfmt='date_hm')))
+            _jd_plot_label(times.min())))
         ax.set_ylabel(
             '{:s}-Band Magnitude Zeropoints (mag)'.format(
                 data['filtername']))
@@ -1228,7 +1239,7 @@ class Distill_Diagnostics(Diagnostics_Html):
             fig, ax = plt.subplots()
             ax.set_title(target.replace('_', ' '))
             ax.set_xlabel('Minutes after {:s} UT'.format(
-                Time(midtimes.min(), format='jd').to_value('iso', subfmt='date_hm')))
+                _jd_plot_label(midtimes.min())))
             ax.set_ylabel('Magnitude')
             ax.errorbar((midtimes-midtimes.min())*1440,
                         [dat[7] for dat in data[target]],
@@ -1445,7 +1456,13 @@ class Distill_Diagnostics(Diagnostics_Html):
 
                 # place aperture
                 if _pp_conf.photmode == 'APER':
-                    aprad = float(hdulist[0].header['APRAD'])
+                    try:
+                        aprad = float(hdulist[0].header['APRAD'])
+                    except KeyError:
+                        logging.warning('APRAD missing in %s; using 5 px for '
+                                        'diagnostic aperture overlay',
+                                        filename)
+                        aprad = 5
                     targetpos = plt.Circle(
                         (self.conf.image_size_thumb_px/2,
                          self.conf.image_size_thumb_px/2),

@@ -268,10 +268,10 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
         if 'idx' not in ref_cat.fields:
             ref_cat.add_field('idx',
                               list(range(ref_cat.shape[0])),
-                              field_type=np.int)
+                              field_type=int)
         if 'idx' not in cat.fields:
             cat.add_field('idx', list(range(cat.shape[0])),
-                          field_type=np.int)
+                          field_type=int)
 
         match = ref_cat.match_with(
             cat,
@@ -407,7 +407,7 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
             caldata_filename = cat.catalogname[:-5]+conf.save_caldata_suffix
             matched_ref_cat = ref_cat[match[0][5].data]
             # build `fit` column that indicates whether star is used in fit
-            used_in_fit = np.zeros(len(matched_ref_cat), dtype=np.int)
+            used_in_fit = np.zeros(len(matched_ref_cat), dtype=int)
             used_in_fit[clipping_steps[idx][3]] = 1
             matched_ref_cat.add_column(Column(used_in_fit, 'fit'))
             matched_ref_cat.remove_column('idx')
@@ -461,6 +461,7 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
         cat.origin = cat.origin.strip() + ";" + ref_cat.catalogname + ";"\
             + filtername
         cat.history += 'calibrated using ' + ref_cat.history
+        cat.magsys = getattr(ref_cat, 'magsystem', ref_cat.magsys)
 
     output['catalogs'] = catalogs
     output['ref_cat'] = ref_cat
@@ -573,14 +574,71 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
         preferred_catalogs = obsparam['photometry_catalogs']
 
     ref_cat = None
+    zp_data = None
     if filtername is not None and magzp is None:
-        ref_cat = create_photometrycatalog(ra_deg, dec_deg, rad_deg,
-                                           filtername, preferred_catalogs,
-                                           max_sources=2e4, solar=solar,
-                                           use_all_stars=use_all_stars,
-                                           display=display)
+        best_ref_cat = None
+        best_zp_data = None
+        best_score = (-1, -1)
 
-    if ref_cat == None:
+        for catalog_idx, catalogname in enumerate(preferred_catalogs):
+            try:
+                candidate_ref_cat = create_photometrycatalog(
+                    ra_deg, dec_deg, rad_deg, filtername, [catalogname],
+                    max_sources=2e4, solar=solar,
+                    use_all_stars=use_all_stars, display=display)
+            except Exception as exc:
+                message = ('Warning: photometric catalog {:s} failed: {}'
+                           .format(catalogname, exc))
+                if display:
+                    print(message)
+                logging.warning(message)
+                continue
+
+            if candidate_ref_cat is None:
+                continue
+
+            # Zeropoint fitting mutates the LDAC catalogs; keep each catalog
+            # attempt independent so later fallbacks start from clean data.
+            candidate_zp_data = derive_zeropoints(
+                candidate_ref_cat, deepcopy(catalogs), filtername, minstars,
+                use_all_stars=use_all_stars, display=display,
+                diagnostics=diagnostics)
+            successes = [frame.get('success', False)
+                         for frame in candidate_zp_data['zeropoints']]
+            n_success = sum(successes)
+            def finite_int(value):
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return 0
+            n_stars = sum([finite_int(frame.get('zp_nstars', 0))
+                           for frame in candidate_zp_data['zeropoints']])
+            score = (n_success, n_stars)
+            if score > best_score:
+                best_ref_cat = candidate_ref_cat
+                best_zp_data = candidate_zp_data
+                best_score = score
+
+            if len(successes) > 0 and all(successes):
+                ref_cat = candidate_ref_cat
+                zp_data = candidate_zp_data
+                break
+
+            if catalog_idx < len(preferred_catalogs)-1:
+                message = (
+                    'Warning: {:s} produced zeropoints for {:d}/{:d} '
+                    'frames; trying next catalog').format(
+                        candidate_ref_cat.catalogname, n_success,
+                        len(successes))
+                if display:
+                    print(message)
+                logging.warning(message)
+
+        if zp_data is None:
+            ref_cat = best_ref_cat
+            zp_data = best_zp_data
+
+    if ref_cat is None:
         if magzp == None:
             print('Skip calibration - report instrumental magnitudes')
             logging.info('Skip calibration - report instrumental magnitudes')
@@ -656,17 +714,20 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
         return output
 
     # match catalogs and derive magnitude zeropoint
-    zp_data = derive_zeropoints(ref_cat, catalogs, filtername,
-                                minstars,
-                                use_all_stars=use_all_stars,
-                                display=display,
-                                diagnostics=diagnostics)
+    if zp_data is None:
+        zp_data = derive_zeropoints(ref_cat, catalogs, filtername,
+                                    minstars,
+                                    use_all_stars=use_all_stars,
+                                    display=display,
+                                    diagnostics=diagnostics)
 
     # zp_data content
     #
     # derive_zeropoints.output
     #
     ###
+
+    catalogs = zp_data['catalogs']
 
     # update diagnostics website
     diag.add_calibration(zp_data)

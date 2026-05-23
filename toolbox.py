@@ -82,8 +82,12 @@ def dateobs_to_jd(date):
     date = date[0].split('-')
 
     # check if date is yyyy-mm-dd or dd-mm-yyyy
-    if len(date[2]) == 4 and len(date[0]) < 3:
-        date = date[::-1]
+    try:
+        if len(date[2]) == 4 and len(date[0]) < 3:
+            date = date[::-1]
+    except IndexError as exc:
+        raise IndexError('DATE-OBS value could not be parsed: %s' %
+                         date) from exc
 
     a = (14 - float(date[1]))//12
     y = float(date[0]) + 4800 - a
@@ -192,6 +196,13 @@ def get_binning(header, obsparam):
     else:
         binning_x = header[obsparam['binning'][0]]
         binning_y = header[obsparam['binning'][1]]
+
+    # Some instruments store binning keywords as FITS strings. Normalize those
+    # here so later pixel-scale arithmetic works the same for string/int cards.
+    if isinstance(binning_x, str):
+        binning_x = float(binning_x) if '.' in binning_x else int(binning_x)
+    if isinstance(binning_y, str):
+        binning_y = float(binning_y) if '.' in binning_y else int(binning_y)
 
     return (binning_x, binning_y)
 

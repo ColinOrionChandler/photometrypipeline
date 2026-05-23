@@ -53,9 +53,16 @@ vatt4k_param = {
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
     'filter': 'FILTER',  # filter keyword
-    'filter_translations': {'TOP 2 BOT 1': 'V', 'TOP 3 BOT 1': 'R',
-                            'TOP 4 BOT 1': 'I', 'TOP 5 BOT 1': 'B',
-                            'TOP 1 BOT 1': None},
+    'filter_translations': {'upper: Clear  lower: I':'I',
+      'upper: Clear  lower: Clear':'R',
+      'upper: Clear  lower: V':'V', 'upper: Clear  lower: R':'R',
+      'upper: I  lower: Clear':'I', 'upper: V  lower: Clear':'V','upper: R  lower: Clear':'R', 'upper: Clear  lower: r':'r', 'upper: z  lower: Clear':'z', 'upper: Clear  lower: GG495':'R',
+      'upper: r  lower: Clear':'r',
+      'TOP 1 BOT 1':'R', # 2/16/2022 COC: archival Praamzius data dictated
+    },
+#   'filter_translations': {'TOP 2 BOT 1': 'V', 'TOP 3 BOT 1': 'R',
+#   'TOP 4 BOT 1': 'I', 'TOP 5 BOT 1': 'B',
+#   'TOP 1 BOT 1': None},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -123,7 +130,7 @@ dctlmi_param = {
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
     'filter': 'FILTERS',  # filter keyword
-    'filter_translations': {'V': 'V', 'R': 'R', 'B': 'B', 'VR': None,
+    'filter_translations': {'V': 'V', 'R': 'R', 'B': 'B', 'VR': 'R', # VR to R 9/13/2020 COC
                               'I': 'I', 'SDSS-U': 'u', 'SDSS-G': 'g',
                               'SDSS-R': 'r', 'SDSS-I': 'i',
                               'SDSS-Z': 'z', 'OH': None, 'CN': None,
@@ -146,7 +153,7 @@ dctlmi_param = {
 
     # registration settings (Scamp)
     'scamp-config-file': rootpath+'/setup/dctlmi.scamp',
-    'reg_max_mag': 19,
+    'reg_max_mag': 21,# 19 to 21 9/13/2020 COC
     'reg_search_radius': 0.5,  # deg
     'source_tolerance': 'high',
 
@@ -159,10 +166,159 @@ dctlmi_param = {
     'swarp-config-file': rootpath+'/setup/dctlmi.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+    'astrometry_catalogs': ['GAIA','PANSTARRS','USNO-B1'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', 'USNO-B1'] # added USNO-B1 1/26/2021 COC
 }
 
+ptf_param = {
+  'telescope_instrument': 'P48MOSAIC',  # telescope/instrument name
+  'telescope_keyword': 'P48',  # telescope/instrument keyword
+  'observatory_code': 'I41',         # MPC observatory code
+  'secpix': (1.01, 1.01),  # pixel size (arcsec)
+  # before binning
+  'ext_coeff': 0.05,          # typical extinction coefficient; not verified 7/14/2021 COC
+
+
+  # image orientation preferences
+  'flipx': True,
+  'flipy': False,
+  'rotate': 0,
+
+  # instrument-specific FITS header keywords
+  'binning': ('CCDSUM#blank0', 'CCDSUM#blank1'),
+  # binning in x/y, '_blankN' denotes that both axes
+  # are listed in one keyword, sep. by blanks
+  'extent': ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y
+  'ra': 'TELRA',  # telescope pointing, RA
+  'dec': 'TELDEC',  # telescope pointin, Dec
+  'radec_separator': 'XXX',   # RA/Dec hms separator, use 'XXX'
+  # if already in degrees
+  'date_keyword': 'DATE-OBS',  # obs date/time
+  # keyword; use
+  # 'date|time' if
+  # separate
+  'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+  # (usually provided by
+  # pp_prepare
+  'object': 'OBJECT',  # object name keyword
+  'filter': 'FILTER',  # filter keyword
+  'filter_translations': {#'V': 'V', 'R': 'R', 'B': 'B', 'VR': 'R', # VR to R 9/13/2020 COC
+    #'I': 'I',
+    'SDSS-U': 'u', 'SDSS-G': 'g',
+    'SDSS-R': 'r', 'SDSS-I': 'i',
+    'r':'r', 'R':'r',
+#    'SDSS-Z': 'z', 'OH': None, 'CN': None,
+#    'UC': None, 'NH': None, 'BC': None,
+#    'C2': None, 'C3': None, 'CO+': None,
+#    'H2O+': None, 'GC': None, 'RC': None
+  },
+  # filtername translation dictionary
+  'exptime': 'EXPTIME',  # exposure time keyword (s)
+  'airmass': 'AIRMASS',  # airmass keyword
+
+  # source extractor settings
+  'source_minarea': 12,  # default sextractor source minimum N_pixels
+  'source_snr': 3,  # default sextractor source snr for registration
+  'aprad_default': 5,  # default aperture radius in px
+  'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+  'sex-config-file': rootpath + '/setup/ztfmosaic.sex',
+  'mask_file': {},
+  #                        mask files as a function of x,y binning
+
+  # scamp settings
+  'scamp-config-file': rootpath + '/setup/ztfmosaic.scamp',
+  'reg_max_mag': 19,
+  'reg_search_radius': 0.1,  # deg
+  'source_tolerance': 'high',
+
+  # default catalog settings
+  'astrometry_catalogs': ['GAIA'],
+  'photometry_catalogs': ['PANSTARRS', 'SDSS-R9'],
+
+  # swarp settings
+  'copy_keywords': ('OBSERVAT,INSTRUME,EXPTIME,OBJECT,' +
+    'DATE-OBS,RA,DEC,AIRMASS,TEL_KEYW,CCDSUM,' +
+    'FILTERS,MIDTIMJD'),
+  #                        keywords to be copied in image
+  #                        combination using swarp
+  'swarp-config-file': rootpath+'/setup/ztfmosaic.swarp',
+
+}
+
+# LBT, LBCR, LBCB
+lbtlbc_param = {
+    'telescope_instrument': 'LBT/LBC',  # telescope/instrument name
+    'telescope_keyword': 'LBTLBC',  # telescope/instrument keyword
+    'observatory_code': 'G83',         # MPC observatory code -- Mt. Graham International Observatory 7/8/2021 COC
+    'secpix': (0.224, 0.224),  # pixel size (arcsec)
+    # before binning
+    'ext_coeff': -0.13,          # typical extinction coefficient; -0.17 (g) and -0.09 (r) so call it -0.13 for now; we can always split the instruments if needbe 7/8/2021 COC
+
+    # image orientation preferences; unchecked but setting both to False as we will have plate solved and more with THELI probably 7/8/2021 COC
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': (1, 1), # KLUDGE, apparently I have a bypass code to allow for integer values here instead of keywords! I must have run into this before... 7/8/2021 COC
+    # binning in x/y, '_blankN' denotes that both axes
+    # are listed in one keyword, sep. by blanks
+    'extent': ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y; confirmed 7/8/2021 COC
+    'ra': 'CRVAL1',  # telescope pointing, RA; no RA transferred, so hoping these are ok 7/8/2021 COC
+    'dec': 'CRVAL2',  # telescope pointin, Dec
+    'radec_separator': 'XXX',   # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time; verified 7/8/2021 COC
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MJDOBS',  # obs midtime jd keyword; set 7/8/2021 COC
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword; 7/8/2021 COC: verified but could be problematic; see: LBC_RED.r-SLOAN.2021-06-09T10:26:21.805_2PABCS.headers:OBJECT     = 2010 JO179 20 --- Identifier observation title
+    'filter': 'FILTER',  # filter keyword; set 7/8/2021 COC
+    'filter_translations': {'V': 'V', 'R': 'R', 'B': 'B', 'VR': 'R', # VR to R 9/13/2020 COC
+#                              'I': 'I', 'SDSS-U': 'u',
+                              'g-SLOAN': 'g', # 7/8/2021 COC set
+                              'r-SLOAN': 'r', # 7/8/2021 COC set
+#                              'SDSS-I': 'i',
+#                              'SDSS-Z': 'z', 'OH': None, 'CN': None,
+#                              'UC': None, 'NH': None, 'BC': None,
+#                              'C2': None, 'C3': None, 'CO+': None,
+#                              'H2O+': None, 'GC': None, 'RC': None
+    },
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s); verified 7/8/2021 COC
+    'airmass': 'AIRMASS',  # airmass keyword; verified 7/8/2021 COC
+
+
+    # source extractor settings
+    'source_minarea': 9,  # default sextractor source minimum N_pixels
+    'source_snr': 3,  # default sextractor source snr for registration
+    'aprad_default': 4,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath+'/setup/lbtlbc.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/lbtlbc.scamp',
+    'reg_max_mag': 25,# 25 set 7/8/2021 COC
+    'reg_search_radius': 0.5,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('OBSERVAT,INSTRUME,EXPTIME,OBJECT,' +
+                      'DATE-OBS,RA,DEC,AIRMASS,TEL_KEYW,CCDSUM,' +
+                      'FILTERS,MIDTIMJD'),
+    #                        keywords to be copied in image
+    #                        combination using swarp
+    'swarp-config-file': rootpath+'/setup/lbtlbc.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA','PANSTARRS','USNO-B1'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', 'USNO-B1'] # added USNO-B1 1/26/2021 COC
+}
 
 # Apache Point ARC 3.5m, ARCTIC
 arc35arctic_param = {
@@ -198,7 +354,10 @@ arc35arctic_param = {
     'object': 'OBJNAME',  # object name keyword
     'filter': 'FILTER',  # filter keyword
     'filter_translations': {'SDSS U': 'u', 'SDSS G': 'g', 'SDSS R': 'r',
-                              'SDSS I': 'i', 'SDSS Z': 'z', 'clear': None},
+                              'SDSS I': 'i', 'SDSS Z': 'z', 'clear': None,
+                              'CU VR': 'r', 'SDSS r':'r', 'SDSS i':'i', 'SDSS g':'g', 'SDSS z':'z', # 9/5/2024 COC
+                              'SDSS r #1': 'r', # 3/31/2026 COC
+                            },
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -2265,6 +2424,71 @@ vltfors2_param = {
     'photometry_catalogs': ['SDSS-R9', 'PANSTARRS', 'APASS9']
 }
 
+# VST, OMEGACAM; COC note: maybe we have to pull the chip we want?
+vstomegacam_param = {
+    'telescope_instrument': 'VST/OMEGACAM',  # telescope/instrument name; COC verified
+    'telescope_keyword': 'OMEGACAM',  # telescope/instrument keyword; COC verified
+    'observatory_code': '309',         # MPC observatory code; COC verified
+    'secpix': (0.21, 0.21),  # pixel size (arcsec); COC verified
+    # before binning
+    'ext_coeff': 0.05,          # typical extinction coefficient; COC verified
+
+    # image orientation preferences; COC unknown
+    'flipx': False, # True to False 9/26/2020 COC
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('ESO DET WIN1 BINX', 'ESO DET WIN1 BINY'), # COC verified
+    # binning in x/y, '_blankN' denotes that both axes are listed in one keyword, sep. by blanks
+    'extent': ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y # COC verified, but see multiple extensions
+    'ra': 'RA',  # telescope pointing, RA
+    'dec': 'DEC',  # telescope pointin, Dec
+    'radec_separator': 'XXX',   # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time; COC verified
+    # keyword; use 'date|time' if separate
+    'obsmidtime_jd': 'MJD-OBS',  # obs midtime jd keyword; COC
+    # (usually provided by pp_prepare
+    'object': 'OBJECT',  # object name keyword; COC verified
+    'filter': 'ESO INS FILT1 NAME',  # filter keyword; COC verified
+    'filter_translations': {'u_SDSS':'u','g_SDSS': 'g', 'r_SDSS':'r', 'i_SDSS':'i', 'z_SDSS':'z'},# COC has seen g_SDSS so far
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s); COC verified
+    'airmass': 'ESO TEL AIRM START',  # airmass keyword; COC
+
+    # source extractor settings
+    'source_minarea': 5,  # default sextractor source minimum N_pixels # 10 to 5 9/26/ 2020 COC
+    'source_snr': 3,  # default sextractor source snr for registration; 5 to 3 9/26/2020 COC
+    'aprad_default': 4,  # default aperture radius in px
+    'aprad_range': [2, 20],  # [minimum, maximum] aperture radius (px) # max to 30 from 20 9/26/2020 COC; back to 20
+    'sex-config-file': rootpath+'/setup/vstomegacam.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/vstomegacam.scamp',
+    'reg_max_mag': 22,
+    'reg_search_radius': 1.5,  # deg; 0.1 to 1 because of chip-extracting 9/26/2020 COC; sqrt(0.5^2 + 0.5^2) * 2 = almost 1.5; worst case scenario
+    'source_tolerance': 'high',
+
+    # swarp settings
+    # swarp does not work for FORS2 due to hierarchical header keywords
+    # requires a workaround
+    'copy_keywords': ('OBSERVAT,INSTRUME,'
+                      'EXPTIME,'
+                      'OBJECT,DATE-OBS,RA,DEC,SCALE,AIRMASS,'
+                      'TEL_KEYW'),
+    #                        keywords to be copied in image
+    #                        combination using swarp
+    'swarp-config-file': rootpath+'/setup/vltfors2.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA','PANSTARRS','URAT-1'],
+    'photometry_catalogs': ['SDSS-R9', 'PANSTARRS', 'APASS9']
+}
+
+
 # Pluto plate
 plutoplate_param = {
     'telescope_instrument': 'Pluto/plate',  # telescope/instrument name
@@ -3271,18 +3495,18 @@ gmosn_param = {
     'telescope_instrument': 'Gemini-N/GMOS',  # telescope/instrument name
     'telescope_keyword': 'GMOSN',  # telescope/instrument keyword
     'observatory_code': '568',         # MPC observatory code
-    'secpix': (0.081, 0.081),  # pixel size (arcsec)
+    'secpix': (0.081, 0.081),  # pixel size (arcsec), unbinned COC notes this is what we put in 0.081"/pixel
+#    'secpix':(0.1456, 0.1456), # 8/6/2021 COC
     # before binning
     'ext_coeff': 0.05,          # typical extinction coefficient
-
-
+    #
     # image orientation preferences
     'flipx': False,
     'flipy': False,
     'rotate': 90,
-
+    #
     # instrument-specific FITS header keywords
-    'binning': ('CCDSUM#blank0', 'CCDSUM#blank1'),
+    'binning': (2,2), # 'CCDSUM#blank0', 'CCDSUM#blank1'
     # binning in x/y, '_blankN' denotes that both axes
     # are listed in one keyword, sep. by blanks
     'extent': ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y
@@ -3290,36 +3514,37 @@ gmosn_param = {
     'dec': 'CRVAL2',  # telescope pointing, Dec
     'radec_separator': 'XXX',   # RA/Dec hms separator, use 'XXX'
     # if already in degrees
-    'date_keyword': 'DATE-OBS|UTSTART',  # obs date/time
+    'date_keyword': 'DATE-OBS|UTSTART',  # obs date/time |UTSTART; |UTSTART is for normal (read: not Theli3) Gemini headers 7/29/2021 COC
     # keyword; guse
     # 'date|time' if
     # separate
-    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
-    # (usually provided by
-    # pp_prepare
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword (usually provided by pp_prepare
     'object': 'OBJECT',  # object name keyword
-    'filter': 'FILTER2',  # filter keyword
-    'filter_translations': {'r_G0303': 'r', 'i_G0302': 'i', 'clear': None},
+    'filter': 'FILTER2',  # filter keyword; FILTER2 out (Theli) 7/26/2021 COC; note we need filter2 for normal, filter for theli3 7/29/2021 COC
+    'filter_translations': {'r_G0303': 'r', 'i_G0302': 'i', 'i':'i', 'clear': None,
+      'g':'g', # added g 6/7/2022 COC
+    }, # added i 7/26/2021 COC
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
-
-
+    #
     # source extractor settings
     'source_minarea': 9,  # default sextractor source minimum N_pixels
-    'source_snr': 10,  # default sextractor source snr for registration
+    'source_snr': 10,  # default sextractor source snr for registration; trying 5 (from 10) 8/6/2021 COC; 5 to 2 no effect; back to 10 8/11/2021 COC
     'aprad_default': 6,  # default aperture radius in px
-    'aprad_range': [2, 15],  # [minimum, maximum] aperture radius (px)
+    'aprad_range': [2, 15],  # [minimum, maximum] aperture radius (px) # 15 to 20 max 8/6/2021 COC back to 15 8/10/2021 COC (solving failed that worked before)
     'sex-config-file': rootpath+'/setup/gmosn.sex',
-    'mask_file': {},  # '2,2': rootpath+'/setup/gmosn_mask_2x2.fits'},
+#    'mask_file': {'2,2': rootpath+'/setup/gmosn_geminipyraf_ideal_2x2.fits'}, # did not work 7/29/2021 COC
+    'mask_file': {},
+    # '2,2': rootpath+'/setup/gmosn_mask_2x2.fits'},
     #                #        mask files as a function of x,y binning
-
+    #
     # registration settings (Scamp)
     'scamp-config-file': rootpath+'/setup/gmosn.scamp',
-    'reg_max_mag': 23,
+    'reg_max_mag': 25, # previously changed to 25, leaving it this way 8/11/2021 COC
     'reg_search_radius': 0.3,  # deg
     'source_tolerance': 'high',
-
+    #
     # swarp settings
     'copy_keywords': ('OBSERVAT,INSTRUME,EXPTIME,OBJECT,' +
                       'DATE-OBS,UTSTART,RA,DEC,AIRMASS,TEL_KEYW,CCDSUM,' +
@@ -3327,10 +3552,79 @@ gmosn_param = {
     #                        keywords to be copied in image
     #                        combination using swarp
     'swarp-config-file': rootpath+'/setup/gmosn.swarp',
-
+    #
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['SDSS-R9', 'PANSTARRS', 'APASS9']
+    'astrometry_catalogs': ['GAIA'],#, 'USNO-B1', 'SDSS-R9'],#,'PANSTARRS','URAT-1'], # adding the non GAIA ones 7/27/2021 COC; back to just GAIA as I try to match Github 8/11/2201 COC
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9'] # tried R13 but it fails with mismatching number of columns 8/2/2021 COC
+}
+
+# Gemini South, GMOS; 6/9/2022 COC; original for Theli3, now for DRAGONS 6/15/2022 COC
+gmoss_param = {
+    'telescope_instrument': 'Gemini-S/GMOS',  # telescope/instrument name
+    'telescope_keyword': 'GMOSS',  # telescope/instrument keyword
+    'observatory_code': 'I11',         # MPC observatory code
+    'secpix': (0.081, 0.081),  # pixel size (arcsec), unbinned COC notes this is what we put in 0.081"/pixel
+#    'secpix':(0.1456, 0.1456), # 8/6/2021 COC
+    # before binning
+    'ext_coeff': 0.05,          # typical extinction coefficient
+    #
+    # image orientation preferences
+    'flipx': True, # to make east left I hope 6/9/2022 COC
+    'flipy': False,
+    'rotate': 270, # to 270 6/9/2022 COC; at least this is what it looks like is needed in DS9 (N right, E down)
+    #
+    # instrument-specific FITS header keywords
+    'binning': (1,1), # 'CCDSUM#blank0', 'CCDSUM#blank1'
+    # binning in x/y, '_blankN' denotes that both axes
+    # are listed in one keyword, sep. by blanks
+    'extent': ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y
+    'ra': 'RA',  # telescope pointing, RA; CRVAL1 to RA 6/15/2022 COC
+    'dec': 'DEC',  # telescope pointing, Dec; CRVAL2 to DEC 6/15/2022 COC
+    'radec_separator': 'XXX',   # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS|UTSTART',  # obs date/time |UTSTART; |UTSTART is for normal (read: not Theli3) Gemini headers 7/29/2021 COC
+    # keyword; guse
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword (usually provided by pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER2',  # filter keyword; FILTER2 out (Theli) 7/26/2021 COC; note we need filter2 for normal, filter for theli3 7/29/2021 COC
+    'filter_translations': {'r_G0303': 'r', 'i_G0302': 'i', 'i':'i', 'clear': None,
+      'g':'g', # added g 6/7/2022 COC
+      'g_G0325':'g', 'r_G0326':'r', 'i_G0327':'i', # 6/15/2022 COC
+    }, # added i 7/26/2021 COC
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+    #
+    # source extractor settings
+    'source_minarea': 9,  # default sextractor source minimum N_pixels
+    'source_snr': 5,  # default sextractor source snr for registration; trying 5 (from 10) 8/6/2021 COC; 5 to 2 no effect; back to 10 8/11/2021 COC; trying 5 6/9/2022 COC
+    'aprad_default': 6,  # default aperture radius in px
+    'aprad_range': [2, 20],  # [minimum, maximum] aperture radius (px) # 15 to 20 max 8/6/2021 COC back to 15 8/10/2021 COC (solving failed that worked before); 15 to 20 6/9/2022 COC
+    'sex-config-file': rootpath+'/setup/gmoss.sex',
+#    'mask_file': {'2,2': rootpath+'/setup/gmosn_geminipyraf_ideal_2x2.fits'}, # did not work 7/29/2021 COC
+    'mask_file': {},
+    # '2,2': rootpath+'/setup/gmosn_mask_2x2.fits'},
+    #                #        mask files as a function of x,y binning
+    #
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/gmoss.scamp',
+    'reg_max_mag': 25, # previously changed to 25, leaving it this way 8/11/2021 COC
+    'reg_search_radius': 0.3,  # deg
+    'source_tolerance': 'high',
+    #
+    # swarp settings
+    'copy_keywords': ('OBSERVAT,INSTRUME,EXPTIME,OBJECT,' +
+                      'DATE-OBS,UTSTART,RA,DEC,AIRMASS,TEL_KEYW,CCDSUM,' +
+                      'FILTER2,MIDTIMJD'),
+    #                        keywords to be copied in image
+    #                        combination using swarp
+    'swarp-config-file': rootpath+'/setup/gmoss.swarp',
+    #
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],#, 'USNO-B1', 'SDSS-R9'],#,'PANSTARRS','URAT-1'], # adding the non GAIA ones 7/27/2021 COC; back to just GAIA as I try to match Github 8/11/2201 COC
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', 'GAIA'] # tried R13 but it fails with mismatching number of columns 8/2/2021 COC
 }
 
 # Danish 1.54m, DFOSC
@@ -3843,7 +4137,7 @@ steward90scc_param = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
 }
 
-# McDonald 2.1m Struve, CQUEAN
+# McDonald 2.1m Otto Struve, CQUEAN
 struvecquean_param = {
     'telescope_instrument': 'Struve/CQUEAN',  # telescope/instrument name
     'telescope_keyword': 'stuvezquean',      # telescope/instrument keyword
@@ -3859,7 +4153,7 @@ struvecquean_param = {
     'rotate': 0,
 
     # instrument-specific FITS header keywords
-    'binning': (1, 1),  # binning in x/y
+    'binning': (1, 1),  # binning in x/y; 9/15/2020 COC: this should work but is causing PP to look for CCDSUM which does NOT exist in the headers
     'extent': ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y
     'ra': 'TEL_RA',  # telescope pointing, RA
     'dec': 'TEL_DEC',  # telescope pointin, Dec
@@ -3874,8 +4168,10 @@ struvecquean_param = {
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
     'filter': 'FILTER',  # filter keyword
-    'filter_translations': {'B': 'B', 'V': 'V',
-                            'R': 'R', 'I': 'I'},
+    'filter_translations': {'B':'B', 'V':'V',
+                            'R':'R', 'I':'I',
+                            'u':'u', 'g':'g', 'r':'r', 'i':'i', # 9/15/2020 COC
+                            },
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -3905,7 +4201,7 @@ struvecquean_param = {
     'swarp-config-file': rootpath+'/setup/vatt4k.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
+    'astrometry_catalogs': ['GAIA','PANSTARRS','URAT-1'], # added 'PANSTARRS','URAT-1' 9/15/2020 COC
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
 }
 
@@ -4056,10 +4352,16 @@ notalfosc_param = {
     # (usually provided by
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
-    'filter': 'ALFLTNM',  # filter keyword
-    'filter_translations': {'Open': None, 'U_Bes 362_60': 'U',
-                            'B_Bes 440_100': 'B', 'V_Bes 530_80': 'V',
-                            'R_Bes 650_130': 'R', 'i_int 797_157': 'I'},
+    'filter': 'FAFLTNM', # filter keyword # from 'ALFLTNM' to FAFLTNM 9/8/2020 COC
+    'filter_translations': {'Open': None,
+                            'U_Bes 362_60': 'U',
+                            'B_Bes 440_100': 'B',
+                            'V_Bes 530_80': 'V',
+                            'R_Bes 650_130': 'R',
+                            'i_int 797_157': 'I',
+                            "r'_SDSS  618_148": 'r',
+                            "i'_SDSS 771_171": 'i',
+                            "g'_SDSS 480_145": 'g'},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -4089,8 +4391,8 @@ notalfosc_param = {
     'swarp-config-file': rootpath+'/setup/notalfosc.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+    'astrometry_catalogs': ['GAIA','PANSTARRS','URAT-1'], # added the non-GAIA ones 9/8/2020 COC; removed USNO-B1 9/15/2020
+    'photometry_catalogs': ['SDSS-R13', 'PANSTARRS', 'APASS9'] # USNO-B1 did not have rmag; note that for PANSTARRS an AB transformation happens
 }
 
 # NEXT
@@ -4155,7 +4457,7 @@ nextfli_param = {
     'photometry_catalogs': ['PANSTARRS']
 }
 
-                      
+
 # GTC, OSIRIS
 gtcosiris_param = {
     'telescope_instrument': 'GTC/OSIRIS',  # telescope/instrument name
@@ -4219,8 +4521,8 @@ gtcosiris_param = {
     'swarp-config-file': rootpath+'/setup/dctlmi.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+    'astrometry_catalogs': ['GAIA','USNO-B1','PANSTARRS','URAT-1'], # added the non-GAIA ones 9/8/2020 COC
+    'photometry_catalogs': ['SDSS-R13', 'PANSTARRS', 'APASS9'] # USNO-B1 did not have rmag; note that for PANSTARRS an AB transformation happens
 }
 
 # CFHT, MegaPrime
@@ -4234,7 +4536,7 @@ cfhtmegaprime_param = {
 
 
     # image orientation preferences
-    'flipx': True,
+    'flipx': False, # True to False 2/18/2021 COC
     'flipy': False,
     'rotate': 0,
 
@@ -4247,16 +4549,18 @@ cfhtmegaprime_param = {
     'dec': 'DEC',  # telescope pointin, Dec
     'radec_separator': ':',   # RA/Dec hms separator, use 'XXX'
     # if already in degrees
-    'date_keyword': 'DATE-OBS',  # obs date/time
+#    'date_keyword': 'DATE-OBS',  # obs date/time
+  'date_keyword': 'DATE',  # obs date/time # 2/18/2021
     # keyword; use
     # 'date|time' if
     # separate
-    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+#    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    'obsmidtime_jd': 'MJDATE',  # obs midtime jd keyword # 2/18/2021
     # (usually provided by
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
-    'filter': 'FILTER2',  # filter keyword
-    'filter_translations': {'Sloan_r': 'r'},
+    'filter': 'FILTER',  # filter keyword # 2/18/2021
+    'filter_translations': {'r.MP9602': 'r'},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -4266,15 +4570,15 @@ cfhtmegaprime_param = {
     'source_minarea': 9,  # default sextractor source minimum N_pixels
     'source_snr': 3,  # default sextractor source snr for registration
     'aprad_default': 4,  # default aperture radius in px
-    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
-    'sex-config-file': rootpath+'/setup/dctlmi.sex',
+    'aprad_range': [2, 20],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath+'/setup/cfhtmegacam.sex',
     'mask_file': {},
     #                        mask files as a function of x,y binning
 
     # registration settings (Scamp)
-    'scamp-config-file': rootpath+'/setup/dctlmi.scamp',
-    'reg_max_mag': 19,
-    'reg_search_radius': 0.5,  # deg
+    'scamp-config-file': rootpath+'/setup/cfhtmegacam.scamp',
+    'reg_max_mag': 24, # to 21 9/26/2020 COC
+    'reg_search_radius': 2,  # deg; 1 to 1.5 to 2 to 1.4 to 2 2/18/2021 COC
     'source_tolerance': 'high',
 
     # swarp settings
@@ -4286,8 +4590,88 @@ cfhtmegaprime_param = {
     'swarp-config-file': rootpath+'/setup/dctlmi.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+    'astrometry_catalogs': ['GAIA','PANSTARRS','URAT-1'],
+    'photometry_catalogs': ['SDSS-R9', 'PANSTARRS', 'APASS9', '2MASS']
+}
+
+# DECam, 6/12/17 COC/AMC
+decam_param = {
+    'telescope_instrument' : 'DECAM', # telescope/instrument name#9/20/17 COC: removed CTIO/ from before DECam
+    'telescope_keyword'    : 'DECam',#'CTIODECAM',  # telescope/instrument keyword; changed to 'DECam' 9/20/17
+    'observatory_code'     : '807',         # MPC observatory code
+    'secpix'               : (0.263, 0.263 ), # pixel size (arcsec)#6/12/17 COC/AMC: verified#changed from .27 to .263 7/14/17 AMC/COC
+                                            # before binning
+    'asteroid_e_pix'       : 20,#number of pixel offset for matching asteroids (will multiply by secpix); default = 5 9/30/17 COC
+    'ext_coeff'            : 0.05,          # typical extinction coefficient; 6/12/17 COC/AMC: unknown
+
+
+    # image orientation preferences
+    'flipx'                : False,#was true,true,90 9/22/17 COC
+    'flipy'                : False,
+    'rotate'               : 0,
+
+    # instrument-specific FITS header keywords
+    'binning'              : ('CCDBIN1', 'CCDBIN2'), #Pixel binning, axis 1, pixel binning, axis 2 #6/12/17 COC/AMC: verified
+                           # binning in x/y, '_blankN' denotes that both axes
+                           # are listed in one keyword, sep. by blanks
+    'extent'               : ('NAXIS1', 'NAXIS2'),   # N_pixels in x/y#6/12/17 COC/AMC: verified
+    'ra'                   : 'RA',  # telescope pointing, RA#6/12/17 COC/AMC: verified
+    'dec'                  : 'DEC', # telescope pointin, Dec #6/12/17 COC/AMC: verified
+    'radec_separator'      : ':',   # RA/Dec hms separator, use 'XXX'#6/12/17 COC/AMC: verified
+                                    # if already in degrees
+    'date_keyword'         : 'DATE-OBS', # obs date/time#6/12/17 COC/AMC: verified
+                                         # keyword; use
+                                         # 'date|time' if
+                                         # separate
+    'obsmidtime_jd'        : 'MIDTIMJD', # obs midtime jd keyword
+                                         # (usually provided by
+                                         # pp_prepare
+    'object'               : 'OBJECT',  # object name keyword #6/12/17 COC/AMC: verified
+    'filter'               : 'FILTER',  # filter keyword#6/12/17 COC/AMC verified
+    'filter_translations'  : { 'VR DECam c0007 6300.0 2600.0': 'V',#'VR'#6/12/17 COC/AMC mapping to none, like DCT etc; disabling rest#changed to V instead of None 7/14/17 AMC/COC
+                               'z DECam SDSS c0004 9260.0 1520.0':'z', #7/14/17 AMC/COC Added filter to test DECam image from NOAO website
+                               'r DECam SDSS c0002 6415.0 1480.0':'r',  #7/19/17 AMC Added known  DECam Filter
+                                'g DECam SDSS c0001 4720.0 1520.0':'g', # 5/23/2026 COC
+#                              'V': 'V', 'R': 'R', 'B': 'B', 'VR': None,
+#                              'I': 'I', 'SDSS-U' : 'u', 'SDSS-G' : 'g',
+#                              'SDSS-R' : 'r', 'SDSS-I' : 'i',
+#                              'SDSS-Z' : 'z', 'OH': None, 'CN': None,
+#                              'UC': None, 'NH': None, 'BC': None,
+#                              'C2': None, 'C3': None, 'CO+': None,
+#                              'H2O+': None, 'GC': None, 'RC': None
+                              },
+                             # f1iltername translation dictionary
+    'exptime'              : 'EXPTIME', # exposure time keyword (s)#6/12/17 COC/AMC: verified
+    'airmass'              : 'AIRMASS', # airmass keyword#6/12/17 COC/AMC: verified
+
+
+    # source extractor settings
+    'source_minarea'       : 9, # default sextractor source minimum N_pixels
+    'source_snr'           : 10, # default sextractor source snr for registration#from 3
+    'aprad_default'        : 4, # default aperture radius in px
+    'aprad_range'          : [5, 30], # [minimum, maximum] aperture radius (px)#9/20/17 COC: changed max from 10 to 30
+    'sex-config-file'      : rootpath+'/setup/decam.sex',#created from generic.sex 6/12/17 COC/AMC
+    'mask_file'            : {},
+    #                        mask files as a function of x,y binning
+
+    # registration settings (Scamp)
+    'scamp-config-file'    : rootpath+'/setup/decam.scamp',#created from generic.scamp 6/12/17 COC/AMC
+    'reg_max_mag'          : 23,#7/14/17 COC/AMC: changed from 19 to 21; 9/19/17 COC: changed to 25
+    'reg_search_radius'    : 0.7, # deg #7/14/17 AMC/COC: Changed from 0.5 to 0.3; changing from 0.3 back to 0.5 7/19/17 COC
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords'        : ('OBSERVAT,INSTRUME,CCDFLTID,EXPTIME,OBJECT,' +
+                              'DATE-OBS,RA,DEC,SCALE,AIRMASS,TEL_KEYW'),
+    #                        keywords to be copied in image
+    #                        combination using swarp
+    'swarp-config-file'    : rootpath+'/setup/decam.swarp',#created from generic.swarp 6/12/17 COC/AMC
+
+    # default catalog settings; changed 7/23/2021 COC
+    'astrometry_catalogs': ['GAIA','PANSTARRS','USNO-B1'],
+    'photometry_catalogs': ['SDSS-R9', 'PANSTARRS', 'APASS9', 'USNO-B1']
+#    'astrometry_catalogs'  : ['GAIA','2MASS','GAIA'], #9/20/17 COC: added 2MASS and TYCHO-2#9/21/17 COC: removed 'TYCHO-2'
+#    'photometry_catalogs'  : ['SDSS-R9','PANSTARRS','APASS9']#['PANSTARRS','2MASS']#6/2/17 COC: removed SDSS9 and APASS, see the telescopes.py.bak file; changed catalogs to SDSS-R9, PANSTARRS, APASS9 (7/13/17 COC & AMC)
 }
 
 # NPOI PW1m, FLI
@@ -4358,7 +4742,7 @@ pwflinpoi_param = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
 }
 
-    
+
 # access functions for telescope configurations
 
 
@@ -4371,22 +4755,25 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'OHP120',
                           'TNGDOLORES', 'GENERIC', 'KPNO4MOS1', 'FROST',
                           'MEXMAN', 'KPNO4MOS1', 'KPNOMOS3',
-                          'KPNO4NEWF', 'UKIRTWFCAM', 'VLTFORS2',
+                          'KPNO4NEWF', 'UKIRTWFCAM', 'VLTFORS2', 'OMEGACAM', # COC added omegacam 9/26/2020
                           'LOWELL42SITE', 'PLUTOPLATE', 'TCS15MUSCAT2',
                           'LCOSBIGKB78', 'ARC35SPICAM', 'LCOSINFL03',
                           'LCOSINFL06',
                           'LCOSINFL16', 'LCOSINFL11',
                           'LCOSINFA03', 'LCOSINFA15',
-                          'LCOSPECFS01', 'P60OPT', 'P60SEDM', 'GMOSN',
+                          'LCOSPECFS01', 'P60OPT', 'P60SEDM', 'GMOSN', 'GMOSS',
                           'DFOSC', 'LONEOS', 'PDO25CMF63ST8', 'PDO05F81KAF1001E',
                           'PDS35CMSTL1001E', 'MMTCAM', 'MAGLDSS3',
                           'SL40IN', 'STEWARD90SCC', 'STRUVECQUEAN',
                           'ZTFMOSAIC', 'NOTALFOSC', 'NEXT', 'GTCOSIRIS',
+                          'LBTLBC',# added LBTLBC 7/8/2021 COC
+                          'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
                           'PWFLINPOI']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
-instrument_identifiers = {'= "Vatt4k"':        'VATT4K',
+instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
+                          '= "Vatt4k"':    'VATT4K', # 12/4/2021 COC
                           'LMI':               'DCTLMI',
                           'lmi': 'DCTLMI',
                           'arctic':            'ARC35ARCTIC',
@@ -4430,6 +4817,7 @@ instrument_identifiers = {'= "Vatt4k"':        'VATT4K',
                           'SIRIUS': 'IRSFSIRIUS',
                           'Goodman Spectro': 'SOARGOODMAN',
                           'FORS2': 'VLTFORS2',
+                          'OMEGACAM': 'OMEGACAM',
                           '2:1 f/17 direct': 'LOWELL42SITE',
                           'Pluto plate': 'PLUTOPLATE',
                           'MuSCAT2': 'TCS15MUSCAT2',
@@ -4445,6 +4833,7 @@ instrument_identifiers = {'= "Vatt4k"':        'VATT4K',
                           'P60': 'P60OPT',
                           'Rainbow Cam': 'P60SEDM',
                           'GMOS-N': 'GMOSN',
+                          'GMOS-S': 'GMOSS',
                           'DFOSC_FASU': 'DFOSC',
                           'loneos': 'LONEOS',
                           '25cm f/6.3 SCT_SBIG ST-8': 'PDO25CMF63ST8',
@@ -4461,10 +4850,21 @@ instrument_identifiers = {'= "Vatt4k"':        'VATT4K',
                           'ALFOSC_FASU': 'NOTALFOSC',
                           'FLI': 'NEXT',
                           'OSIRIS': 'GTCOSIRIS',
-                          'MegaPrime': 'CFHTMEGAPRIME',}
+                          'MegaPrime': 'CFHTMEGAPRIME',
+                          'LBCB': 'LBTLBC',
+                          'LBCR': 'LBTLBC',
+                          'LBC': 'LBTLBC',
+                          'LBTLBC':'LBTLBC',
+                          'PTF/MOSAIC' : 'P48MOSAIC', # 7/15/2021 COC
+                          'P48MOSAIC' : 'P48MOSAIC',
+                          'DECam':             'DECAM',#6/12/17 COC/AMC: added
+                          'DECAM_BKP3':        'DECAM', # 7/23/2021 COC
+                        }
 
 # translate telescope keyword into parameter set defined here
 telescope_parameters = {'VATT4K':       vatt4k_param,
+                        '= "Vatt4k"':   vatt4k_param, # 12/4/2021 COC
+                        'Vatt4k':       vatt4k_param, # 12/4/2021 COC
                         'DCTLMI':        dctlmi_param,
                         'ARC35ARCTIC':   arc35arctic_param,
                         'ARC35AGILE':    arc35agile_param,
@@ -4497,6 +4897,7 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'UKIRTWFCAM': ukirtwfcam_param,
                         'IRSFSIRIUS': irsfsirius_param,
                         'VLTFORS2': vltfors2_param,
+                        'OMEGACAM': vstomegacam_param,
                         'LOWELL42SITE': lowell42site_param,
                         'PLUTOPLATE': plutoplate_param,
                         'TCS15MUSCAT2': tcs15muscat2_param,
@@ -4512,6 +4913,7 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'P60OPT': p60opt_param,
                         'P60SEDM': p60sedm_param,
                         'GMOSN': gmosn_param,
+                        'GMOSS': gmoss_param,
                         'DFOSC': dfosc_param,
                         'LONEOS': loneos_param,
                         'PDO25CMF63ST8': pdo25cmf63st8_param,
@@ -4528,7 +4930,13 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'NEXT': nextfli_param,
                         'GTCOSIRIS': gtcosiris_param,
                         'CFHTMEGAPRIME': cfhtmegaprime_param,
-                        'PWFLINPOI': pwflinpoi_param}
+                        'LBTLBC': lbtlbc_param,
+                        'P48MOSAIC': ptf_param, # 7/14/2021 COC
+                        'P48' : ptf_param, # 7/14/2021 COC
+                        'DECAM':         decam_param, #6/12/17 COC/AMC: added
+                        'DECam':decam_param, # 7/23/2021 COC
+                        'PWFLINPOI': pwflinpoi_param
+}
 
 
 

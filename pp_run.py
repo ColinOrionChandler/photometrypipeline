@@ -64,7 +64,9 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 def run_the_pipeline(filenames, man_targetname, man_filtername,
                      fixed_aprad, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs):
+                     rerun_registration, asteroids, keep_wcs,
+                     telescope=None, nodeblending=False,
+                     variable_stars=False):
     """
     wrapper to run the photometry pipeline
     """
@@ -83,27 +85,30 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                         format=_pp_conf.log_formatline,
                         datefmt=_pp_conf.log_datefmt)
 
-    # read telescope information from fits headers
-    # check that they are the same for all images
     logging.info('##### new pipeline process in {:s} #####'.format(
         os.getcwd()))
-    logging.info(('check for same telescope/instrument for %d ' +
-                  'frames') % len(filenames))
     instruments = []
-    for idx, filename in enumerate(filenames):
-        try:
-            hdulist = fits.open(filename, ignore_missing_end=True)
-        except IOError:
-            logging.error('cannot open file %s' % filename)
-            print('ERROR: cannot open file %s' % filename)
-            filenames.pop(idx)
-            continue
+    if telescope is not None:
+        instruments.append(telescope)
+    else:
+        # Read telescope information from FITS headers and check that all
+        # images in this dataset come from one instrument.
+        logging.info(('check for same telescope/instrument for %d ' +
+                      'frames') % len(filenames))
+        for idx, filename in enumerate(filenames):
+            try:
+                hdulist = fits.open(filename, ignore_missing_end=True)
+            except IOError:
+                logging.error('cannot open file %s' % filename)
+                print('ERROR: cannot open file %s' % filename)
+                filenames.pop(idx)
+                continue
 
-        header = hdulist[0].header
-        for key in _pp_conf.instrument_keys:
-            if key in header:
-                instruments.append(header[key])
-                break
+            header = hdulist[0].header
+            for key in _pp_conf.instrument_keys:
+                if key in header:
+                    instruments.append(header[key])
+                    break
 
     if len(filenames) == 0:
         raise IOError('cannot find any data...')
@@ -122,7 +127,14 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
             logging.error('%s %s' % (filenames[i], instruments[i]))
         sys.exit()
 
-    telescope = _pp_conf.instrument_identifiers[instruments[0]]
+    instrument = instruments[0]
+    if instrument in _pp_conf.instrument_identifiers:
+        telescope = _pp_conf.instrument_identifiers[instrument]
+    elif instrument in _pp_conf.telescope_parameters:
+        telescope = instrument
+    else:
+        raise KeyError('unknown telescope/instrument %s; please update '
+                       'setup/telescopes.py accordingly' % instrument)
     obsparam = _pp_conf.telescope_parameters[telescope]
     logging.info('%d %s frames identified' % (len(filenames), telescope))
 
@@ -184,6 +196,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                                      keep_wcs=keep_wcs)
 
     # run wcs registration
+    summary_message = ''
 
     if not keep_wcs:
         # default sextractor/scamp parameters
@@ -198,7 +211,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                                                 source_minarea, aprad,
                                                 None, obsparam,
                                                 obsparam['source_tolerance'],
-                                                False,
+                                                nodeblending=nodeblending,
                                                 display=True,
                                                 diagnostics=True)
 
@@ -321,6 +334,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                                     None, None,
                                     rejectionfilter,
                                     asteroids=asteroids,
+                                    variable_stars=variable_stars,
                                     display=True, diagnostics=True)
 
     targets = np.array(list(distillate['targetnames'].keys()))
@@ -375,6 +389,13 @@ if __name__ == '__main__':
     parser.add_argument('-keep_wcs',
                         help='keep wcs information and skip registration',
                         action="store_true", default=False)
+    parser.add_argument('-telescope', help='manually specify telescope name',
+                        default=None)
+    parser.add_argument('-nodeblending',
+                        help='skip deblending in the registration phase',
+                        action="store_true", default=False)
+    parser.add_argument('-variable_stars', help='match variable stars',
+                        action="store_true", default=False)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
@@ -389,6 +410,9 @@ if __name__ == '__main__':
     asteroids = args.asteroids
     rejectionfilter = args.reject
     keep_wcs = args.keep_wcs
+    telescope = args.telescope
+    nodeblending = args.nodeblending
+    variable_stars = args.variable_stars
     filenames = sorted(args.images)
 
     # if filenames = ['all'], walk through directories and run pipeline
@@ -423,7 +447,10 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername,
                                  fixed_aprad, source_tolerance, solar,
-                                 rerun_registration, asteroids)
+                                 rerun_registration, asteroids, keep_wcs,
+                                 telescope=telescope,
+                                 nodeblending=nodeblending,
+                                 variable_stars=variable_stars)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -432,5 +459,7 @@ if __name__ == '__main__':
         # call run_the_pipeline only on filenames
         run_the_pipeline(filenames, man_targetname, man_filtername,
                          fixed_aprad, source_tolerance, solar,
-                         rerun_registration, asteroids, keep_wcs)
+                         rerun_registration, asteroids, keep_wcs,
+                         telescope=telescope, nodeblending=nodeblending,
+                         variable_stars=variable_stars)
         pass

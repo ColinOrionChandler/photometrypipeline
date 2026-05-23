@@ -45,7 +45,7 @@ FULLOUTCAT_NAME        full.cat        # Full output catalog filename
 MATCH                  Y               # Do pattern-matching (Y/N) ?
 MATCH_NMAX             0               # Max.number of detections for MATCHing
                                        # (0=auto)
-PIXSCALE_MAXERR        1.1             # Max scale-factor uncertainty
+PIXSCALE_MAXERR        1.3             # Max scale-factor uncertainty # 1.1 to 1.3 8/6/2021 COC
 POSANGLE_MAXERR        180.            # Max position-angle uncertainty (deg)
 POSITION_MAXERR        5.0             # Max positional uncertainty (arcmin)
 MATCH_RESOL            0               # Matching resolution (arcsec); 0=auto

@@ -152,7 +152,10 @@ def curve_of_growth_analysis(filenames, parameters,
         # pull data from LDAC file
         ldac_filename = filename[:filename.find('.fit')]+'.ldac'
         data = catalog('Sextractor_LDAC')
-        data.read_ldac(ldac_filename, maxflag=3)
+        data.read_ldac(ldac_filename, filename, maxflag=3,
+                       object_keyword=obsparam['object'],
+                       exptime_keyword=obsparam['exptime'],
+                       time_keyword='MIDTIMJD')
 
         if data.shape[0] == 0:
             continue

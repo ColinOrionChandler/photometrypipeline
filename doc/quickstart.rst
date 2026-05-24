@@ -166,7 +166,9 @@ calibration. Results are written to files
 ``photometry_<objectname>.dat`` in the respective filter directory.
 The Source Extractor catalogs are kept as ``*.ldac`` files, and PP
 also writes ``*.ldac.csv`` sidecars for quick inspection with standard
-table tools.
+table tools. The photometry tables include the source and calibration
+components of the magnitude uncertainty, plus source-centroid,
+astrometric, and quadrature-combined position uncertainties in arcsec.
 
 
 Although PP is designed to run mostly automatically, some common sense

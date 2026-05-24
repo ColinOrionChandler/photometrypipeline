@@ -229,6 +229,30 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
     output = {'filtername': filtername, 'minstars': minstars_external,
               'zeropoints': [], 'clipping_steps': []}
 
+    def astrometric_residual_sigmas(ref_cat, cat, match, used_indices):
+        """Estimate frame-level WCS scatter from calibration-star residuals."""
+
+        if len(used_indices) < 2:
+            return np.nan, np.nan, np.nan
+
+        used_indices = np.asarray(used_indices, dtype=int)
+        ref_ra = np.asarray(match[0][3][used_indices], dtype=float)
+        ref_dec = np.asarray(match[0][4][used_indices], dtype=float)
+        cat_idx = np.asarray(match[1][2][used_indices], dtype=int)
+        cat_ra = np.asarray(cat['ra_deg'][cat_idx], dtype=float)
+        cat_dec = np.asarray(cat['dec_deg'][cat_idx], dtype=float)
+
+        dra = (ref_ra-cat_ra)*3600*np.cos(np.deg2rad(ref_dec))
+        ddec = (ref_dec-cat_dec)*3600
+        # Remove the bulk catalog offset; this column reports random scatter.
+        dra -= np.nanmedian(dra)
+        ddec -= np.nanmedian(ddec)
+
+        ra_sig = np.nanstd(dra, ddof=1)
+        dec_sig = np.nanstd(ddec, ddof=1)
+        pos_sig = np.sqrt(ra_sig**2+dec_sig**2)
+        return ra_sig, dec_sig, pos_sig
+
     # match catalogs based on coordinates
     for cat in catalogs:
 
@@ -456,6 +480,14 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
                         np.sqrt(cat['MAGERR_'+_pp_conf.photmode]**2 +
                                 clipping_steps[idx][1]**2)],
                        ['F', 'F'])
+
+        ra_sig, dec_sig, pos_sig = astrometric_residual_sigmas(
+            ref_cat, cat, match, clipping_steps[idx][3])
+        cat.add_fields(['ASTR_SIG_RA', 'ASTR_SIG_DEC', 'ASTR_SIG_POS'],
+                       [np.ones(cat.shape[0])*ra_sig,
+                        np.ones(cat.shape[0])*dec_sig,
+                        np.ones(cat.shape[0])*pos_sig],
+                       ['F', 'F', 'F'])
 
         # add ref_cat identifier to catalog
         cat.origin = cat.origin.strip() + ";" + ref_cat.catalogname + ";"\

@@ -30,6 +30,8 @@ import argparse
 import sqlite3
 from astroquery.jplhorizons import Horizons
 from astropy.io import ascii
+from astropy.io import fits
+from astropy.wcs import WCS
 
 try:
     from astroquery.vizier import Vizier
@@ -56,6 +58,78 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     level=_pp_conf.log_level,
                     format=_pp_conf.log_formatline,
                     datefmt=_pp_conf.log_datefmt)
+
+
+def _safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def _fits_filename_from_catalog(cat):
+    try:
+        return cat.origin.split(';')[1]
+    except IndexError:
+        return None
+
+
+def _sky_jacobian_arcsec_per_pix(fits_filename, x, y):
+    """Numerically derive the local WCS Jacobian in arcsec per pixel."""
+
+    if fits_filename is None or not os.path.exists(fits_filename):
+        return None
+
+    try:
+        wcs = WCS(fits.getheader(fits_filename))
+        ra0, dec0 = wcs.all_pix2world([x], [y], 1)
+        rax, decx = wcs.all_pix2world([x+1], [y], 1)
+        ray, decy = wcs.all_pix2world([x], [y+1], 1)
+    except Exception as exc:
+        logging.warning('could not derive WCS uncertainty scale for %s: %s',
+                        fits_filename, exc)
+        return None
+
+    dec_rad = np.deg2rad(dec0[0])
+
+    def delta_ra_arcsec(ra_a, ra_b):
+        return ((ra_a-ra_b+180) % 360-180)*3600*np.cos(dec_rad)
+
+    return np.array([[delta_ra_arcsec(rax[0], ra0[0]),
+                      delta_ra_arcsec(ray[0], ra0[0])],
+                     [(decx[0]-dec0[0])*3600,
+                      (decy[0]-dec0[0])*3600]])
+
+
+def source_position_uncertainty(cat, values):
+    """Propagate Source Extractor centroid errors into sky coordinates."""
+
+    err_a = _safe_float(values.get('ERRAWIN_IMAGE'))
+    err_b = _safe_float(values.get('ERRBWIN_IMAGE'))
+    theta = _safe_float(values.get('ERRTHETAWIN_IMAGE'))
+    x = _safe_float(values.get('XWIN_IMAGE'))
+    y = _safe_float(values.get('YWIN_IMAGE'))
+    if any(np.isnan(val) for val in [err_a, err_b, theta, x, y]):
+        return np.nan, np.nan, np.nan
+
+    theta = np.deg2rad(theta)
+    rot = np.array([[np.cos(theta), -np.sin(theta)],
+                    [np.sin(theta), np.cos(theta)]])
+    cov_pix = rot.dot(np.diag([err_a**2, err_b**2])).dot(rot.T)
+
+    jacobian = _sky_jacobian_arcsec_per_pix(
+        _fits_filename_from_catalog(cat), x, y)
+    if jacobian is None:
+        obsparam = _pp_conf.telescope_parameters[
+            cat.origin.split(';')[0].strip()]
+        jacobian = np.array([[obsparam['secpix'][0], 0],
+                             [0, obsparam['secpix'][1]]])
+
+    cov_sky = jacobian.dot(cov_pix).dot(jacobian.T)
+    ra_sig = np.sqrt(max(cov_sky[0, 0], 0))
+    dec_sig = np.sqrt(max(cov_sky[1, 1], 0))
+    pos_sig = np.sqrt(ra_sig**2+dec_sig**2)
+    return ra_sig, dec_sig, pos_sig
 
 
 def manual_positions(posfile, catalogs, display=True):
@@ -587,7 +661,9 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         match_keys_other_catalog, extract_other_catalog = [], []
 
         for key in ['ra_deg', 'dec_deg', 'XWIN_IMAGE', 'YWIN_IMAGE',
-                    'FLAGS', 'FWHM_WORLD']:
+                    'FLAGS', 'FWHM_WORLD', 'ERRAWIN_IMAGE',
+                    'ERRBWIN_IMAGE', 'ERRTHETAWIN_IMAGE',
+                    'ASTR_SIG_RA', 'ASTR_SIG_DEC', 'ASTR_SIG_POS']:
             if key in cat.fields:
                 match_keys_other_catalog.append(key)
                 extract_other_catalog.append(key)
@@ -601,6 +677,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             tolerance=None)
 
         for i in range(len(match[0][0])):
+            values = {key: match[1][idx][i] for idx, key in
+                      enumerate(extract_other_catalog)}
             # derive calibrated magnitudes, if available
             try:
                 cal_mag = match[1][len(extract_other_catalog)+2][i]
@@ -610,18 +688,31 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 cal_mag = match[1][len(extract_other_catalog)][i]
                 cal_magerr = match[1][len(extract_other_catalog)+1][i]
 
+            source_ra_sig, source_dec_sig, source_pos_sig = (
+                source_position_uncertainty(cat, values))
+            astrom_ra_sig = _safe_float(values.get('ASTR_SIG_RA'))
+            astrom_dec_sig = _safe_float(values.get('ASTR_SIG_DEC'))
+            astrom_pos_sig = _safe_float(values.get('ASTR_SIG_POS'))
+            total_ra_sig = np.sqrt(source_ra_sig**2+astrom_ra_sig**2)
+            total_dec_sig = np.sqrt(source_dec_sig**2+astrom_dec_sig**2)
+            total_pos_sig = np.sqrt(source_pos_sig**2+astrom_pos_sig**2)
+
             data.append([match[0][2][i], match[0][0][i], match[0][1][i],
-                         match[1][0][i], match[1][1][i],
+                         values.get('ra_deg'), values.get('dec_deg'),
                          match[1][len(extract_other_catalog)][i],
                          match[1][len(extract_other_catalog)+1][i],
                          cal_mag, cal_magerr,
                          cat.obstime, cat.catalogname,
-                         match[1][2][i], match[1][3][i],
-                         cat.origin, match[1][4][i], match[1][5][i]])
+                         values.get('XWIN_IMAGE'), values.get('YWIN_IMAGE'),
+                         cat.origin, values.get('FLAGS'),
+                         values.get('FWHM_WORLD'),
+                         source_ra_sig, source_dec_sig, source_pos_sig,
+                         astrom_ra_sig, astrom_dec_sig, astrom_pos_sig,
+                         total_ra_sig, total_dec_sig, total_pos_sig])
             # format: ident, RA_exp, Dec_exp, RA_img, Dec_img,
             #         mag_inst, sigmag_instr, mag_cal, sigmag_cal
             #         obstime, filename, img_x, img_y, origin, flags
-            #         fwhm
+            #         fwhm, source/astrometric/total position sigmas
             targetnames[match[0][2][i]] = 1
 
     # list of targets
@@ -649,7 +740,10 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                    'mag    sig     source_ra    source_dec   [1]   [2]   ' +
                    '[3]   [4]    [5]       ZP ZP_sig inst_mag ' +
                    'in_sig               [6] [7] [8]    [9]          [10] ' +
-                   'FWHM"\n')
+                   'FWHM mag_src_sig mag_cal_sig mag_tot_sig ' +
+                   'ra_src_sig dec_src_sig pos_src_sig ra_ast_sig ' +
+                   'dec_ast_sig pos_ast_sig ra_tot_sig dec_tot_sig ' +
+                   'pos_tot_sig\n')
 
         for dat in data:
             # sort measured magnitudes by target
@@ -689,6 +783,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 else:
                     outf.write(' ')
                     output[target].append(dat)
+                # Existing calibrated sigma is source and zeropoint in quadrature.
+                mag_cal_sig = np.sqrt(max(dat[8]**2-dat[6]**2, 0))
                 outf.write(('%35.35s ' % dat[10].replace(' ', '_')) +
                            ('%15.7f ' % dat[9][0]) +
                            ('%8.4f ' % dat[7]) +
@@ -709,7 +805,19 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                            ('%3d ' % dat[14]) +
                            ('%s' % dat[13].split(';')[0]) +
                            ('%10s ' % _pp_conf.photmode) +
-                           ('%4.2f\n' % (dat[15]*3600)))
+                           ('%4.2f ' % (dat[15]*3600)) +
+                           ('%7.4f ' % dat[6]) +
+                           ('%7.4f ' % mag_cal_sig) +
+                           ('%7.4f ' % dat[8]) +
+                           ('%7.4f ' % dat[16]) +
+                           ('%7.4f ' % dat[17]) +
+                           ('%7.4f ' % dat[18]) +
+                           ('%7.4f ' % dat[19]) +
+                           ('%7.4f ' % dat[20]) +
+                           ('%7.4f ' % dat[21]) +
+                           ('%7.4f ' % dat[22]) +
+                           ('%7.4f ' % dat[23]) +
+                           ('%7.4f\n' % dat[24]))
                 output['targetframes'][target].append(dat[10][:-4]+'fits')
 
         outf.writelines('#\n# [1]: predicted_RA - source_RA [arcsec]\n' +
@@ -721,7 +829,12 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                         '# [7]: photometric band\n' +
                         '# [8]: Source Extractor flag\n' +
                         '# [9]: telescope/instrument\n' +
-                        '# [10]: photometry method\n')
+                        '# [10]: photometry method\n' +
+                        '# *_src_sig: source measurement uncertainty\n' +
+                        '# *_cal_sig: photometric calibration uncertainty\n' +
+                        '# *_ast_sig: astrometric field uncertainty\n' +
+                        '# *_tot_sig: quadrature-combined uncertainty\n' +
+                        '# position uncertainties are in arcsec\n')
         outf.close()
 
     # output content

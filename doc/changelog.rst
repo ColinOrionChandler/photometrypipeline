@@ -10,7 +10,8 @@ documented here.
   ``-fixedtargets``, and ``-offset``; LDAC source coordinates are
   recomputed from the FITS WCS when available, which is important for TPV
   headers used with ``-keep_wcs``; extraction also writes ``*.ldac.csv``
-  inspection files
+  inspection files; distilled photometry tables include magnitude and
+  position uncertainty components and quadrature totals
 
 * 2018-12-02: major overhaul of diagnostic output
 
@@ -57,4 +58,3 @@ documented here.
   
 .. _Mommert 2017: http://adsabs.harvard.edu/abs/2017A%26C....18...47M
 .. _Pan-STARRS DR1: http://panstarrs.stsci.edu/
-

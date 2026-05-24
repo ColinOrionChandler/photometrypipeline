@@ -4598,7 +4598,7 @@ cfhtmegaprime_param = {
 decam_param = {
     'telescope_instrument' : 'DECAM', # telescope/instrument name#9/20/17 COC: removed CTIO/ from before DECam
     'telescope_keyword'    : 'DECam',#'CTIODECAM',  # telescope/instrument keyword; changed to 'DECam' 9/20/17
-    'observatory_code'     : '807',         # MPC observatory code
+    'observatory_code'     : 'W84',         # MPC observatory code for DECam
     'secpix'               : (0.263, 0.263 ), # pixel size (arcsec)#6/12/17 COC/AMC: verified#changed from .27 to .263 7/14/17 AMC/COC
                                             # before binning
     'asteroid_e_pix'       : 20,#number of pixel offset for matching asteroids (will multiply by secpix); default = 5 9/30/17 COC

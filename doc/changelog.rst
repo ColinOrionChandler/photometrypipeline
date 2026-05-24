@@ -11,7 +11,10 @@ documented here.
   recomputed from the FITS WCS when available, which is important for TPV
   headers used with ``-keep_wcs``; extraction also writes ``*.ldac.csv``
   inspection files; distilled photometry tables include magnitude and
-  position uncertainty components and quadrature totals
+  position uncertainty components and quadrature totals; added
+  ``pptool_mpcsubmission.py`` to produce paired ADES PSV and MPC1992
+  80-column submission files from distilled PP photometry, and updated
+  DECam's MPC observatory code to ``W84``
 
 * 2018-12-02: major overhaul of diagnostic output
 

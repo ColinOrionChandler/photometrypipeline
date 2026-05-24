@@ -410,6 +410,55 @@ the logical order:
 Functions that provide additional functionality:
    
    
+.. function:: pptool_mpcsubmission (input_path --target string [--observer string] [--measurer string] [--submitter string] [--contact string] [--observatory-code string] [--astcat string] [--photcat string] [--prog string] [--output-dir path] [--strict] [--dry-run])
+
+   build companion MPC submission files from distilled PP photometry
+
+   :param input_path: directory tree or individual
+                      ``photometry_<targetname>.dat`` file to process
+   :param --target: target designation, for instance ``2016 CJ155``;
+                    this is used to find the matching photometry file
+                    and to create the packed MPC1992 designation
+   :param --observer: (optional) observer name; may be supplied more
+                      than once. If omitted, observers are derived from
+                      the FITS ``OBSERVER`` header
+   :param --measurer: (optional) measurer name; default:
+                      ``C. O. Chandler``
+   :param --submitter: (optional) submitter/contact person name;
+                       default: ``C. O. Chandler``
+   :param --contact: (optional) contact email address; default:
+                     ``orion@nau.edu``
+   :param --observatory-code: (optional) MPC observatory code; default:
+                              ``W84`` for DECam
+   :param --astcat: (optional) ADES astrometric catalog identifier;
+                    default: ``Gaia2``
+   :param --photcat: (optional) override photometric catalog identifier
+                     for all rows; otherwise the catalog listed in each
+                     photometry row is used
+   :param --prog: (optional) MPC program code; one-character values are
+                  also placed in the legacy 80-column output
+   :param --output-dir: (optional) directory for all generated files;
+                        by default, files are written next to the input
+                        directory or photometry file
+   :param --strict: (optional) treat warnings as errors
+   :param --dry-run: (optional) validate and print output paths without
+                     writing files
+
+   This sidecar reads final ``photometry_<targetname>.dat`` files
+   recursively, resolves the FITS image for each row, and writes both
+   ADES PSV and MPC1992 80-column files every time. For example::
+
+      python pptool_mpcsubmission.py /path/to/2016_CJ155 --target "2016 CJ155"
+
+   The default output names are
+   ``mpc_<targetname>_ADES.psv``, ``mpc_<targetname>_80col.txt``,
+   and ``mpc_<targetname>_summary.txt``. ADES output preserves the
+   richer uncertainty, exposure-time, seeing, photometric-catalog, and
+   FITS-provenance fields; the summary file explicitly lists the
+   ADES-only values that cannot be represented in the 80-column
+   companion file.
+
+
 .. function:: pp_manident ([-zoom float], images)
 
    manual target identification

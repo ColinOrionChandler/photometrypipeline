@@ -7,9 +7,11 @@
 from __future__ import print_function
 
 import argparse
+import os
 from astropy.time import Time
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 
 # pipeline-specific modules
 import _pp_conf
@@ -27,25 +29,42 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     datefmt=_pp_conf.log_datefmt)
 
 
-if __name__ == '__main__':
+def resolve_fitsfilename(photometryfile, catalog_token):
+    """Find the FITS image that produced a photometry row."""
 
-    # command line arguments
-    parser = argparse.ArgumentParser(description='prepare MPC submission')
-    parser.add_argument('photometryfile',
-                        help='photometry files to process')
-    parser.add_argument('targetname',
-                        help='target identifier (<=7 chars)')
+    photometrydir = os.path.dirname(os.path.abspath(photometryfile))
+    candidates = [
+        catalog_token,
+        catalog_token+'.fits',
+        catalog_token.replace('.ldac', '.fits'),
+        os.path.join(photometrydir, catalog_token),
+        os.path.join(photometrydir, catalog_token+'.fits'),
+        os.path.join(photometrydir, catalog_token.replace('.ldac', '.fits')),
+    ]
 
-    args = parser.parse_args()
-    filename = args.photometryfile
-    targetname = args.targetname
-    if len(targetname) > 7:
-        targetname = targetname[:7]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
 
-    outf = open('mpc_astrometry.dat', 'w')
+    fits_candidates = [os.path.join(photometrydir, filename)
+                       for filename in os.listdir(photometrydir)
+                       if filename.lower().endswith(('.fits', '.fit',
+                                                     '.fts'))]
+    if len(fits_candidates) == 1:
+        return fits_candidates[0]
 
-    fitsfilename = open(filename, 'r').readlines()[1].split()[0]
-    fitsfilename = fitsfilename.replace('.ldac', '.fits')
+    raise FileNotFoundError('cannot identify FITS file for %s row %s' %
+                            (photometryfile, catalog_token))
+
+
+def write_observations(outf, filename, targetname):
+    """Append MPC 80-column observations from one PP photometry file."""
+
+    first_observation = next(obs for obs in open(filename, 'r').readlines()
+                             if obs.strip() and not
+                             obs.lstrip().startswith('#'))
+    fitsfilename = resolve_fitsfilename(filename,
+                                        first_observation.split()[0])
 
     # read telescope and filter information from fits headers
     instrument = None
@@ -64,22 +83,9 @@ if __name__ == '__main__':
 
     observatory_code = obsparam['observatory_code']
 
-    # write header
-    outf.write('COD #observatory_code: 3 char#\n'
-               'CON #contact person: J. Doe#\n'
-               'CON [#email address#]\n'
-               'OBS #observer name: J. Doe#\n'
-               'MEA #measurer name: J. Doe#\n'
-               'TEL #telescope name, aperture, camera#\n'
-               'NET #astrometry catalog#\n'
-               'BND #calibration band#\n'
-               'NUM #number of observations submitted#\n'
-               'COM #comments#\n'
-               'ACK #email address\n')
-
     # loop over photometry file
     for obs in open(filename, 'r').readlines():
-        if '#' in obs:
+        if not obs.strip() or obs.lstrip().startswith('#'):
             continue
 
         obs = obs.split()
@@ -118,5 +124,41 @@ if __name__ == '__main__':
                    ('      ') +  # blank
                    ('{0:3s}'.format(observatory_code)) +
                    ('\n'))
+
+
+if __name__ == '__main__':
+
+    # command line arguments
+    parser = argparse.ArgumentParser(description='prepare MPC submission')
+    parser.add_argument('photometryfile', nargs='+',
+                        help='photometry file(s) to process')
+    parser.add_argument('targetname',
+                        help='target identifier (<=7 chars)')
+    parser.add_argument('-output', default='mpc_astrometry.dat',
+                        help='output file')
+
+    args = parser.parse_args()
+    filenames = args.photometryfile
+    targetname = args.targetname
+    if len(targetname) > 7:
+        targetname = targetname[:7]
+
+    outf = open(args.output, 'w')
+
+    # write header
+    outf.write('COD #observatory_code: 3 char#\n'
+               'CON #contact person: J. Doe#\n'
+               'CON [#email address#]\n'
+               'OBS #observer name: J. Doe#\n'
+               'MEA #measurer name: J. Doe#\n'
+               'TEL #telescope name, aperture, camera#\n'
+               'NET #astrometry catalog#\n'
+               'BND #calibration band#\n'
+               'NUM #number of observations submitted#\n'
+               'COM #comments#\n'
+               'ACK #email address\n')
+
+    for filename in filenames:
+        write_observations(outf, filename, targetname)
 
     outf.close()

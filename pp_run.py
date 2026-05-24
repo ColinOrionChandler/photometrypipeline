@@ -66,7 +66,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                      fixed_aprad, source_tolerance, solar,
                      rerun_registration, asteroids, keep_wcs,
                      telescope=None, nodeblending=False,
-                     variable_stars=False):
+                     variable_stars=False, fixed_targets_file=None,
+                     posfile=None, offset=None):
     """
     wrapper to run the photometry pipeline
     """
@@ -329,9 +330,12 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
 
     # distill photometry results
     print('\n----- distill photometry results\n')
+    if offset is None:
+        offset = [0, 0]
+    # Keep manual/fixed target handling available from the all-in-one wrapper.
     distillate = pp_distill.distill(calibration['catalogs'],
-                                    man_targetname, [0, 0],
-                                    None, None,
+                                    man_targetname, offset,
+                                    fixed_targets_file, posfile,
                                     rejectionfilter,
                                     asteroids=asteroids,
                                     variable_stars=variable_stars,
@@ -396,6 +400,14 @@ if __name__ == '__main__':
                         action="store_true", default=False)
     parser.add_argument('-variable_stars', help='match variable stars',
                         action="store_true", default=False)
+    parser.add_argument('-offset', help='primary target offset (arcsec)',
+                        nargs=2, default=[0, 0])
+    parser.add_argument('-positions',
+                        help='manual target positions file for pp_distill',
+                        default=None)
+    parser.add_argument('-fixedtargets',
+                        help='fixed target positions file for pp_distill',
+                        default=None)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
@@ -413,6 +425,9 @@ if __name__ == '__main__':
     telescope = args.telescope
     nodeblending = args.nodeblending
     variable_stars = args.variable_stars
+    offset = [float(coo) for coo in args.offset]
+    posfile = args.positions
+    fixed_targets_file = args.fixedtargets
     filenames = sorted(args.images)
 
     # if filenames = ['all'], walk through directories and run pipeline
@@ -450,7 +465,9 @@ if __name__ == '__main__':
                                  rerun_registration, asteroids, keep_wcs,
                                  telescope=telescope,
                                  nodeblending=nodeblending,
-                                 variable_stars=variable_stars)
+                                 variable_stars=variable_stars,
+                                 fixed_targets_file=fixed_targets_file,
+                                 posfile=posfile, offset=offset)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -461,5 +478,7 @@ if __name__ == '__main__':
                          fixed_aprad, source_tolerance, solar,
                          rerun_registration, asteroids, keep_wcs,
                          telescope=telescope, nodeblending=nodeblending,
-                         variable_stars=variable_stars)
+                         variable_stars=variable_stars,
+                         fixed_targets_file=fixed_targets_file,
+                         posfile=posfile, offset=offset)
         pass

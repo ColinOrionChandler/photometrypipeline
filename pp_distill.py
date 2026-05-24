@@ -94,6 +94,11 @@ def manual_positions(posfile, catalogs, display=True):
                                                   ('dec', float),
                                                   ('MJD', float)])
 
+    # Single-frame runs produce a scalar record; normalize to an array so the
+    # code below treats one and many manual positions identically.
+    if len(positions.shape) == 0:
+        positions = np.array([positions])
+
     try:
         assert len(positions) == len(catalogs)
     except AssertionError:

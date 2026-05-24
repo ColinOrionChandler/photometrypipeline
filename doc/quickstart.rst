@@ -125,6 +125,8 @@ browse through all images and click on the target. The trajectory of
 the target is fit using a spline function. Quitting
 :func:`pp_manident` creates a ``positions.dat`` file, which can be
 used as input for :func:`pp_distill` using the `-positions` option.
+The same file can be provided directly to :func:`pp_run` using
+``-positions``.
 
 The manual target identification also allows the user to extract
 photometry from images with highly trailed background stars. In that

@@ -4743,6 +4743,63 @@ pwflinpoi_param = {
 }
 
 
+catalinalem60_param = {
+    'telescope_instrument': 'Catalina Lemmon 60-inch',
+    'telescope_keyword': 'CATALINALEM60',
+    'observatory_code': 'G96',
+    # The archived images are 2x2 binned at about 1.521 arcsec/pixel.
+    'secpix': (0.7605, 0.7605),
+    'ext_coeff': 0.05,
+
+    # WCS is already good for this archive product; the wrapper uses
+    # pp_run -keep_wcs, so these only matter for accidental registration runs.
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('CCDSUM#blank0', 'CCDSUM#blank1'),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'RA',
+    'dec': 'DEC',
+    'radec_separator': ':',
+    'date_keyword': 'DATE-OBS|TIME-OBS',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'FILTER',
+    'filter_translations': {'NONE': 'V', 'none': 'V', 'None': 'V',
+                            'CLEAR': 'V', 'clear': 'V', 'Clear': 'V',
+                            'C': 'V'},
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+
+    # source extractor settings
+    'source_minarea': 5,
+    'source_snr': 3,
+    'aprad_default': 3,
+    'aprad_range': [2, 8],
+    'sex-config-file': rootpath+'/setup/generic.sex',
+    'mask_file': {},
+
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/generic.scamp',
+    'reg_max_mag': 19,
+    'reg_search_radius': 0.5,
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,CCDSUM,AIRMASS,' +
+                      'MAGZEROP,MAGZP,PHOTIRMS,VPHOTOFF,VPHOTDEV,' +
+                      'VPHOTCNT,TEL_KEYW,MIDTIMJD,ORIGFILE,ORIGEXT'),
+    'swarp-config-file': rootpath+'/setup/generic.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+}
+
+
 # access functions for telescope configurations
 
 
@@ -4768,7 +4825,7 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'ZTFMOSAIC', 'NOTALFOSC', 'NEXT', 'GTCOSIRIS',
                           'LBTLBC',# added LBTLBC 7/8/2021 COC
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
-                          'PWFLINPOI']
+                          'PWFLINPOI', 'CATALINALEM60']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
@@ -4859,6 +4916,8 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'P48MOSAIC' : 'P48MOSAIC',
                           'DECam':             'DECAM',#6/12/17 COC/AMC: added
                           'DECAM_BKP3':        'DECAM', # 7/23/2021 COC
+                          'SN 110-106/165685-06': 'CATALINALEM60',
+                          '60-INCH TELESCOPE': 'CATALINALEM60',
                         }
 
 # translate telescope keyword into parameter set defined here
@@ -4935,7 +4994,8 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'P48' : ptf_param, # 7/14/2021 COC
                         'DECAM':         decam_param, #6/12/17 COC/AMC: added
                         'DECam':decam_param, # 7/23/2021 COC
-                        'PWFLINPOI': pwflinpoi_param
+                        'PWFLINPOI': pwflinpoi_param,
+                        'CATALINALEM60': catalinalem60_param
 }
 
 

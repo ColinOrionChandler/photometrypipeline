@@ -67,7 +67,9 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                      rerun_registration, asteroids, keep_wcs,
                      telescope=None, nodeblending=False,
                      variable_stars=False, fixed_targets_file=None,
-                     posfile=None, offset=None):
+                     posfile=None, offset=None, magzp=None,
+                     magzp_keyword=None, magzp_sig_keyword=None,
+                     magzp_sig=None, rejectionfilter='pos'):
     """
     wrapper to run the photometry pipeline
     """
@@ -291,6 +293,10 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         calibration = pp_calibrate.calibrate(filenames, minstars,
                                              filtername,
                                              manualcatalog, obsparam,
+                                             magzp=magzp,
+                                             magzp_keyword=magzp_keyword,
+                                             magzp_sig_keyword=magzp_sig_keyword,
+                                             magzp_sig=magzp_sig,
                                              solar=solar,
                                              display=True,
                                              diagnostics=True)
@@ -408,6 +414,18 @@ if __name__ == '__main__':
     parser.add_argument('-fixedtargets',
                         help='fixed target positions file for pp_distill',
                         default=None)
+    parser.add_argument('-magzp', help=('provide external magnitude zeropoint' +
+                                        ' and uncertainty'),
+                        nargs=2)
+    parser.add_argument('-magzp_keyword',
+                        help='read external magnitude zeropoints from this '
+                             'FITS header keyword')
+    parser.add_argument('-magzp_sig_keyword',
+                        help='read magnitude zeropoint uncertainties from '
+                             'this FITS header keyword')
+    parser.add_argument('-magzp_sig',
+                        help='fixed magnitude zeropoint uncertainty to use '
+                             'with -magzp_keyword')
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
@@ -428,7 +446,18 @@ if __name__ == '__main__':
     offset = [float(coo) for coo in args.offset]
     posfile = args.positions
     fixed_targets_file = args.fixedtargets
+    magzp = args.magzp
+    magzp_keyword = args.magzp_keyword
+    magzp_sig_keyword = args.magzp_sig_keyword
+    magzp_sig = args.magzp_sig
     filenames = sorted(args.images)
+
+    if magzp is not None:
+        magzp = (float(magzp[0]), float(magzp[1]))
+    if magzp_sig is not None:
+        magzp_sig = float(magzp_sig)
+    if isinstance(rejectionfilter, list):
+        rejectionfilter = rejectionfilter[0]
 
     # if filenames = ['all'], walk through directories and run pipeline
     # each dataset
@@ -467,7 +496,12 @@ if __name__ == '__main__':
                                  nodeblending=nodeblending,
                                  variable_stars=variable_stars,
                                  fixed_targets_file=fixed_targets_file,
-                                 posfile=posfile, offset=offset)
+                                 posfile=posfile, offset=offset,
+                                 magzp=magzp,
+                                 magzp_keyword=magzp_keyword,
+                                 magzp_sig_keyword=magzp_sig_keyword,
+                                 magzp_sig=magzp_sig,
+                                 rejectionfilter=rejectionfilter)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -480,5 +514,9 @@ if __name__ == '__main__':
                          telescope=telescope, nodeblending=nodeblending,
                          variable_stars=variable_stars,
                          fixed_targets_file=fixed_targets_file,
-                         posfile=posfile, offset=offset)
+                         posfile=posfile, offset=offset,
+                         magzp=magzp, magzp_keyword=magzp_keyword,
+                         magzp_sig_keyword=magzp_sig_keyword,
+                         magzp_sig=magzp_sig,
+                         rejectionfilter=rejectionfilter)
         pass

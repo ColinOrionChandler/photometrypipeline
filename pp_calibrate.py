@@ -54,6 +54,99 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 # photometric fitting routines
 
 
+def ldac_filename_for_fits(filename):
+    """Return the LDAC filename produced for a FITS image."""
+
+    return filename[:filename.find('.fit')]+'.ldac'
+
+
+def manual_zeropoints_from_headers(filenames, magzp=None,
+                                   magzp_keyword=None,
+                                   magzp_sig_keyword=None,
+                                   magzp_sig=None):
+    """Build per-frame zeropoints from CLI values or FITS headers."""
+
+    if magzp is not None and magzp_keyword is not None:
+        raise ValueError('use either -magzp or -magzp_keyword, not both')
+
+    if magzp is not None:
+        zp, zp_sig = float(magzp[0]), float(magzp[1])
+        return {ldac_filename_for_fits(filename):
+                {'filename': ldac_filename_for_fits(filename),
+                 'zp': zp, 'zp_sig': zp_sig,
+                 'zp_nstars': 0, 'zp_usedstars': 0,
+                 'obstime': 0, 'match': 0,
+                 'clipping_steps': 0, 'zp_idx': 0,
+                 'success': True,
+                 'source': 'manual_zp'}
+                for filename in filenames}
+
+    if magzp_keyword is None:
+        return None
+
+    if magzp_sig_keyword is None and magzp_sig is None:
+        raise ValueError('-magzp_keyword requires -magzp_sig_keyword or '
+                         '-magzp_sig')
+
+    zeropoints = {}
+    for filename in filenames:
+        header = fits.getheader(filename, ignore_missing_end=True)
+        try:
+            zp = float(header[magzp_keyword])
+        except KeyError:
+            raise KeyError('zeropoint keyword %s not found in %s' %
+                           (magzp_keyword, filename))
+
+        if magzp_sig_keyword is not None:
+            try:
+                zp_sig = float(header[magzp_sig_keyword])
+            except KeyError:
+                if magzp_sig is None:
+                    raise KeyError('zeropoint uncertainty keyword %s not '
+                                   'found in %s' %
+                                   (magzp_sig_keyword, filename))
+                zp_sig = float(magzp_sig)
+        else:
+            zp_sig = float(magzp_sig)
+
+        ldac_filename = ldac_filename_for_fits(filename)
+        zeropoints[ldac_filename] = {
+            'filename': ldac_filename,
+            'zp': zp,
+            'zp_sig': zp_sig,
+            'zp_nstars': 0,
+            'zp_usedstars': 0,
+            'obstime': 0,
+            'match': 0,
+            'clipping_steps': 0,
+            'zp_idx': 0,
+            'success': True,
+            'source': magzp_keyword,
+        }
+
+    return zeropoints
+
+
+def apply_manual_zeropoints(catalogs, filtername, zeropoints):
+    """Apply fixed or header-derived zeropoints to extracted catalogs."""
+
+    filterkey = filtername+'mag'
+    efilterkey = 'e_' + filtername + 'mag'
+
+    for cat in catalogs:
+        zeropoint = zeropoints[cat.catalogname]
+        cat.add_fields([filterkey, efilterkey],
+                       [cat['MAG_'+_pp_conf.photmode] + zeropoint['zp'],
+                        np.sqrt(cat['MAGERR_'+_pp_conf.photmode]**2 +
+                                zeropoint['zp_sig']**2)],
+                       ['F', 'F'])
+        cat.origin = (cat.origin.strip() +
+                      ';'+filtername+'_manual_zp;')
+        cat.history += 'calibrated using manual zeropoint'
+
+    return catalogs
+
+
 def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                              preferred_catalogs,
                              min_sources=_pp_conf.min_sources_photometric_catalog,
@@ -523,7 +616,8 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
 
 def calibrate(filenames, minstars, manfilter, manualcatalog,
               obsparam, maxflag=3,
-              magzp=None, solar=False,
+              magzp=None, magzp_keyword=None,
+              magzp_sig_keyword=None, magzp_sig=None, solar=False,
               use_all_stars=False,
               display=False, diagnostics=False):
     """
@@ -605,9 +699,13 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
     else:
         preferred_catalogs = obsparam['photometry_catalogs']
 
+    manual_zps = manual_zeropoints_from_headers(
+        filenames, magzp=magzp, magzp_keyword=magzp_keyword,
+        magzp_sig_keyword=magzp_sig_keyword, magzp_sig=magzp_sig)
+
     ref_cat = None
     zp_data = None
-    if filtername is not None and magzp is None:
+    if filtername is not None and manual_zps is None:
         best_ref_cat = None
         best_zp_data = None
         best_score = (-1, -1)
@@ -671,27 +769,23 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
             zp_data = best_zp_data
 
     if ref_cat is None:
-        if magzp == None:
+        if manual_zps is None:
             print('Skip calibration - report instrumental magnitudes')
             logging.info('Skip calibration - report instrumental magnitudes')
         else:
-            print(('use externally provided magnitude zeropoint: ' +
-                   '%5.2f+-%4.2f') % (magzp[0], magzp[1]))
-            logging.info(('use externally provided magnitude zeropoint: ' +
-                          '%5.2f+-%4.2f') % (magzp[0], magzp[1]))
+            if filtername is None:
+                raise ValueError('manual zeropoints require a filter name')
+            zps = [frame['zp'] for frame in manual_zps.values()]
+            zp_errs = [frame['zp_sig'] for frame in manual_zps.values()]
+            print(('use externally provided magnitude zeropoints: ' +
+                   '%5.2f+-%4.2f average') %
+                  (np.average(zps), np.average(zp_errs)))
+            logging.info(('use externally provided magnitude zeropoints: ' +
+                          '%5.2f+-%4.2f average') %
+                         (np.average(zps), np.average(zp_errs)))
 
-            # manually add catalog fields and apply magnitude zeropoint
-            filterkey = filtername+'mag'
-            efilterkey = 'e_' + filtername + 'mag'
-            for cat in catalogs:
-                cat.add_fields([filterkey, efilterkey],
-                               [cat['MAG_'+_pp_conf.photmode] + magzp[0],
-                                np.sqrt(cat['MAGERR_'+_pp_conf.photmode]**2 +
-                                        magzp[1]**2)],
-                               ['F', 'F'])
-                cat.origin = (cat.origin.strip() +
-                              ';'+filtername+'_manual_zp;')
-                cat.history += 'calibrated using manual zeropoint'
+            catalogs = apply_manual_zeropoints(catalogs, filtername,
+                                               manual_zps)
 
         # write calibrated database files
         logging.info('write calibrated data into database files')
@@ -702,17 +796,22 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
 
         logging.info('Done! ------------------------------------------------')
 
-        output = {'filtername': None,
+        zeropoints = ([manual_zps[cat.catalogname] for cat in catalogs]
+                      if manual_zps is not None
+                      else [{'filename': 'stuff',
+                             'zp': 0,
+                             'zp_sig': 0,
+                             'zp_nstars': 0,
+                             'zp_usedstars': 0,
+                             'obstime': 0,
+                             'match': 0,
+                             'clipping_steps': 0,
+                             'zp_idx': 0}
+                            for i in range(len(filenames))])
+
+        output = {'filtername': filtername,
                   'minstars': 0,
-                  'zeropoints': [{'filename': 'stuff',
-                                  'zp': 0,
-                                  'zp_sig': 0,
-                                  'zp_nstars': 0,
-                                  'zp_usedstars': 0,
-                                  'obstime': 0,
-                                  'match': 0,
-                                  'clipping_steps': 0,
-                                  'zp_idx': 0} for i in range(len(filenames))],
+                  'zeropoints': zeropoints,
                   'catalogs': catalogs,
                   'ref_cat': None}
 
@@ -795,6 +894,15 @@ if __name__ == '__main__':
     parser.add_argument('-magzp', help=('provide external magnitude zeropoint' +
                                         ' and uncertainty'),
                         nargs=2)
+    parser.add_argument('-magzp_keyword',
+                        help='read external magnitude zeropoints from this '
+                             'FITS header keyword')
+    parser.add_argument('-magzp_sig_keyword',
+                        help='read magnitude zeropoint uncertainties from '
+                             'this FITS header keyword')
+    parser.add_argument('-magzp_sig',
+                        help='fixed magnitude zeropoint uncertainty to use '
+                             'with -magzp_keyword')
     parser.add_argument('-solar',
                         help='restrict to solar-color stars',
                         action="store_true", default=False)
@@ -809,6 +917,9 @@ if __name__ == '__main__':
     manualcatalog = args.cat
     instrumental = args.instrumental
     man_magzp = args.magzp
+    magzp_keyword = args.magzp_keyword
+    magzp_sig_keyword = args.magzp_sig_keyword
+    magzp_sig = args.magzp_sig
     solar = args.solar
     use_all_stars = args.use_all_stars
     filenames = args.images
@@ -838,9 +949,15 @@ if __name__ == '__main__':
 
     if man_magzp is not None:
         man_magzp = (float(man_magzp[0]), float(man_magzp[1]))
+    if magzp_sig is not None:
+        magzp_sig = float(magzp_sig)
 
     calibration = calibrate(filenames, minstars, manfilter,
                             manualcatalog, obsparam, maxflag=maxflag,
-                            magzp=man_magzp, solar=solar,
+                            magzp=man_magzp,
+                            magzp_keyword=magzp_keyword,
+                            magzp_sig_keyword=magzp_sig_keyword,
+                            magzp_sig=magzp_sig,
+                            solar=solar,
                             use_all_stars=use_all_stars,
                             display=True, diagnostics=conf.diagnostics)

@@ -18,9 +18,11 @@ from astropy.time import Time
 
 
 DEFAULT_ASTCAT = "Gaia2"
-DEFAULT_CONTACT = "orion@nau.edu"
+DEFAULT_CONTACT = "coc123@uw.edu"
+DEFAULT_AC2_CONTACTS = "coc123@uw.edu, murtagh@uw.edu"
 DEFAULT_MEASURER = "C. O. Chandler"
 DEFAULT_OBSERVATORY_CODE = "W84"
+DEFAULT_ACK_SUFFIX = "Small-body Search and Rescue"
 DEFAULT_SUBMITTER = "C. O. Chandler"
 
 PHOTOMETRY_COLUMNS = (
@@ -96,6 +98,9 @@ class PhotometryObservation:
     band: str
     instrument: str
     fwhm: float | None
+    ra_src_sig: float | None
+    dec_src_sig: float | None
+    pos_src_sig: float | None
     ra_tot_sig: float | None
     dec_tot_sig: float | None
     pos_tot_sig: float | None
@@ -241,15 +246,20 @@ def resolve_fits_filename(photometry_file: Path, catalog_token: str) -> Path:
 
     photometry_dir = photometry_file.parent
     token_path = Path(catalog_token)
-    candidates = [
-        token_path,
+    candidates = []
+    if token_path.suffix.lower() != ".ldac":
+        candidates.append(token_path)
+    candidates.extend([
         token_path.with_suffix(".fits") if token_path.suffix else
         Path(catalog_token + ".fits"),
         Path(catalog_token.replace(".ldac", ".fits")),
-        photometry_dir / catalog_token,
+    ])
+    if token_path.suffix.lower() != ".ldac":
+        candidates.append(photometry_dir / catalog_token)
+    candidates.extend([
         photometry_dir / (catalog_token + ".fits"),
         photometry_dir / catalog_token.replace(".ldac", ".fits"),
-    ]
+    ])
 
     for candidate in candidates:
         if candidate.exists():
@@ -323,6 +333,9 @@ def make_observation(photometry_file: Path,
         band=row["band"] if row["band"] != "-" else "C",
         instrument=row["instrument"],
         fwhm=_float_or_none(row["fwhm"]),
+        ra_src_sig=_float_or_none(row["ra_src_sig"]),
+        dec_src_sig=_float_or_none(row["dec_src_sig"]),
+        pos_src_sig=_float_or_none(row["pos_src_sig"]),
         ra_tot_sig=_float_or_none(row["ra_tot_sig"]),
         dec_tot_sig=_float_or_none(row["dec_tot_sig"]),
         pos_tot_sig=_float_or_none(row["pos_tot_sig"]),
@@ -390,6 +403,19 @@ def derive_observers(observations: list[PhotometryObservation],
         observer for obs in observations for observer in obs.metadata.observers)
 
 
+def split_people(value: str) -> list[str]:
+    """Split a comma- or semicolon-separated people field."""
+
+    return [part.strip() for part in re.split(r"\s*,\s*|\s*;\s*", value)
+            if part.strip()]
+
+
+def derive_measurers(config: SubmissionConfig) -> list[str]:
+    """Return individual measurer names from the config field."""
+
+    return split_people(config.measurer)
+
+
 def derive_telescope_context(observations: list[PhotometryObservation]) -> tuple[str, str, str]:
     """Derive a compact telescope context for ADES and 80-column headers."""
 
@@ -424,20 +450,38 @@ def validate_observations(observations: list[PhotometryObservation],
             raise SubmissionError("invalid coordinates in %s" %
                                   obs.photometry_file)
         if obs.ra_tot_sig is None or obs.ra_tot_sig <= 0:
-            if obs.pos_tot_sig is None or obs.pos_tot_sig <= 0:
+            if obs.pos_tot_sig is not None and obs.pos_tot_sig > 0:
+                warnings.append("using pos_tot_sig for missing RA uncertainty "
+                                "in %s" % obs.catalog_token)
+                obs.ra_tot_sig = obs.pos_tot_sig
+            elif obs.ra_src_sig is not None and obs.ra_src_sig > 0:
+                warnings.append("using ra_src_sig for missing RA uncertainty "
+                                "in %s" % obs.catalog_token)
+                obs.ra_tot_sig = obs.ra_src_sig
+            elif obs.pos_src_sig is not None and obs.pos_src_sig > 0:
+                warnings.append("using pos_src_sig for missing RA uncertainty "
+                                "in %s" % obs.catalog_token)
+                obs.ra_tot_sig = obs.pos_src_sig
+            else:
                 raise SubmissionError("missing positive RA uncertainty for %s" %
                                       obs.catalog_token)
-            warnings.append("using pos_tot_sig for missing RA uncertainty in "
-                            "%s" % obs.catalog_token)
-            obs.ra_tot_sig = obs.pos_tot_sig
         if obs.dec_tot_sig is None or obs.dec_tot_sig <= 0:
-            if obs.pos_tot_sig is None or obs.pos_tot_sig <= 0:
+            if obs.pos_tot_sig is not None and obs.pos_tot_sig > 0:
+                warnings.append("using pos_tot_sig for missing Dec uncertainty "
+                                "in %s" % obs.catalog_token)
+                obs.dec_tot_sig = obs.pos_tot_sig
+            elif obs.dec_src_sig is not None and obs.dec_src_sig > 0:
+                warnings.append("using dec_src_sig for missing Dec uncertainty "
+                                "in %s" % obs.catalog_token)
+                obs.dec_tot_sig = obs.dec_src_sig
+            elif obs.pos_src_sig is not None and obs.pos_src_sig > 0:
+                warnings.append("using pos_src_sig for missing Dec uncertainty "
+                                "in %s" % obs.catalog_token)
+                obs.dec_tot_sig = obs.pos_src_sig
+            else:
                 raise SubmissionError(
                     "missing positive Dec uncertainty for %s" %
                     obs.catalog_token)
-            warnings.append("using pos_tot_sig for missing Dec uncertainty in "
-                            "%s" % obs.catalog_token)
-            obs.dec_tot_sig = obs.pos_tot_sig
 
         key = (round(obs.julian_date, 8), round(obs.ra_deg, 8),
                round(obs.dec_deg, 8))
@@ -465,6 +509,7 @@ def format_ades_psv(observations: list[PhotometryObservation],
 
     telescope_design, aperture, detector = derive_telescope_context(observations)
     observers = derive_observers(observations, config)
+    measurers = derive_measurers(config)
     fieldnames = [
         "permID",
         "provID",
@@ -498,9 +543,10 @@ def format_ades_psv(observations: list[PhotometryObservation],
         lines.append("# observers")
         for observer in observers:
             lines.append("! name %s" % observer)
+    lines.append("# measurers")
+    for measurer in measurers:
+        lines.append("! name %s" % measurer)
     lines.extend([
-        "# measurers",
-        "! name %s" % config.measurer,
         "# telescope",
         "! design %s" % telescope_design,
         "! aperture %s" % aperture,
@@ -577,6 +623,7 @@ def format_obs80(observations: list[PhotometryObservation],
 
     packed_target = pack_minor_planet_provisional_designation(config.target)
     observers = derive_observers(observations, config)
+    measurers = derive_measurers(config)
     telescope_design, _, detector = derive_telescope_context(observations)
     bands = _unique_preserve_order(obs.band for obs in observations)
 
@@ -587,13 +634,13 @@ def format_obs80(observations: list[PhotometryObservation],
     if observers:
         lines.append("OBS %s" % ", ".join(observers))
     lines.extend([
-        "MEA %s" % config.measurer,
+        "MEA %s" % ", ".join(measurers),
         "TEL %s + %s" % (telescope_design, detector),
         "NET %s" % config.astcat,
         "BND %s" % ",".join(bands),
         "NUM %d" % len(observations),
-        "ACK %s" % normalize_target(config.target),
-        "AC2 %s" % config.contact,
+        "ACK %s %s" % (normalize_target(config.target), DEFAULT_ACK_SUFFIX),
+        "AC2 %s" % DEFAULT_AC2_CONTACTS,
         "",
     ])
 
@@ -630,6 +677,7 @@ def format_summary(input_path: Path,
     """Format a human-readable provenance and warning summary."""
 
     observers = derive_observers(observations, config)
+    measurers = derive_measurers(config)
     photcats = _unique_preserve_order(
         config.photcat or obs.phot_cat for obs in observations)
     sources = _unique_preserve_order(str(obs.source_file)
@@ -656,7 +704,7 @@ def format_summary(input_path: Path,
         "Astrometric catalog: %s" % config.astcat,
         "Photometric catalog(s): %s" % ", ".join(photcats),
         "Submitter: %s" % config.submitter,
-        "Measurer: %s" % config.measurer,
+        "Measurer: %s" % ", ".join(measurers),
         "Contact: %s" % config.contact,
         "Observers: %s" % (", ".join(observers) if observers else "(none)"),
         "ADES output: %s" % ades_path,

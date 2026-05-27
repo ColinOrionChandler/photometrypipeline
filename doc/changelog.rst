@@ -4,6 +4,17 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-05-26: added Catalina Lemmon 60-inch support under
+  ``CATALINALEM60`` and the ``pptool_catalina_lemmon60.py`` workflow
+  wrapper, including safe raw-file backup, compressed extension-FITS
+  flattening, ``-keep_wcs`` processing, header zeropoints from
+  ``MAGZP``/``PHOTIRMS``, and group-position fallback support. Added
+  per-frame header zeropoints to ``pp_calibrate`` and ``pp_run`` via
+  ``-magzp_keyword``, ``-magzp_sig_keyword``, and ``-magzp_sig``.
+  Updated ``pptool_mpcsubmission.py`` defaults for Catalina Lemmon
+  submission emails, measurers, ACK text, AC2 contacts, and fallback
+  astrometric uncertainty handling.
+
 * 2026-05-23: imported local telescope/configuration updates, including
   DECam support; ``pp_run`` now passes through ``-telescope``,
   ``-nodeblending``, ``-variable_stars``, ``-positions``,

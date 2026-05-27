@@ -17,6 +17,9 @@ observatories/instruments:
 +--------------------------+--------------------+----------------+
 | Calar Alto 1.23m         | DLR-MkIII          | CA123DLRMKIII  |
 +--------------------------+--------------------+----------------+
+| Catalina Lemmon 60-inch  | SN 110-106/165685- | CATALINALEM60  |
+|                          | 06 (****)          |                |
++--------------------------+--------------------+----------------+
 | CFHT                     | Megaprime          | CFHTMEGAPRIME  |
 +--------------------------+--------------------+----------------+
 | CTIO 0.9m                | CFCCD              | CTIO09         |
@@ -135,6 +138,13 @@ to running PP, e.g., using the ``delhead`` command provided by
 (***): wcs provided with telescope data is usually excellent; in this case
 I suggest skipping registration and to use ``pp_run`` with the
 ``-keep_wcs`` option.
+
+(****): Catalina Lemmon archive products are compressed extension-FITS
+images with science data in extension 1. Use
+``pptool_catalina_lemmon60.py`` to create ``originals_backup.tar``,
+flatten the data into ``cl60_*.fits`` working files, keep the archive
+WCS, apply ``MAGZP``/``PHOTIRMS`` header zeropoints, and optionally
+rerun ``pp_distill`` with group-position fallback rows.
 
 It is recommended to stitch images from cameras with multiple amplifiers
 together using the correct orientations. Furthermore, it is recommended to

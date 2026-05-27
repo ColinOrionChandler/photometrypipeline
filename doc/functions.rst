@@ -4,7 +4,7 @@ Functions
 The individual pipeline functions are introduced and explained
 below. All functions presented here can be called from the terminal. 
 
-.. function:: pp_run ([-prefix string], [-target string], [-filter string], [-fixed_aprad float], [-solar], [-rerun_registration], [-asteroids], [-keep_wcs], [-telescope string], [-nodeblending], [-variable_stars], [-offset float float], [-positions string], [-fixedtargets string], images)
+.. function:: pp_run ([-prefix string], [-target string], [-filter string], [-fixed_aprad float], [-solar], [-rerun_registration], [-asteroids], [-keep_wcs], [-telescope string], [-nodeblending], [-variable_stars], [-offset float float], [-positions string], [-fixedtargets string], [-magzp float float], [-magzp_keyword string], [-magzp_sig_keyword string], [-magzp_sig float], images)
 
    serves as a wrapper for all the individual pipeline processes
 
@@ -49,6 +49,16 @@ below. All functions presented here can be called from the terminal.
                       :func:`pp_distill`
    :param -fixedtargets: (optional) make use of ``-fixedtargets`` option of
                          :func:`pp_distill`
+   :param -magzp: (optional) external magnitude zeropoint and
+                  uncertainty to apply to every frame instead of
+                  deriving zeropoints from a photometric catalog
+   :param -magzp_keyword: (optional) FITS header keyword containing a
+                          per-frame magnitude zeropoint
+   :param -magzp_sig_keyword: (optional) FITS header keyword containing a
+                              per-frame zeropoint uncertainty
+   :param -magzp_sig: (optional) fixed zeropoint uncertainty to use with
+                      ``-magzp_keyword`` when no uncertainty keyword is
+                      available
    :param images: images on which the pipeline is supposed to run,
                   wildcard symbols (``'*'``, ``'?'``) can be used; or,
                   by using ``all``, PP runs on all FITS files in
@@ -264,7 +274,7 @@ the logical order:
    the measured FWHMs.
 
 
-.. function:: pp_calibrate ([-minstars int/float], [-catalog string], [-filter string], [-maxflag integer], [-instrumental], [-solar], [-use_all_stars], images)
+.. function:: pp_calibrate ([-minstars int/float], [-catalog string], [-filter string], [-maxflag integer], [-instrumental], [-solar], [-use_all_stars], [-magzp float float], [-magzp_keyword string], [-magzp_sig_keyword string], [-magzp_sig float], images)
 
    photometric calibration of each input frame in one specific filter
    
@@ -309,6 +319,17 @@ the logical order:
    :param use_all_stars: if used, no quality checks are performed on
 			 calibration stars and all stars are used in the
 			 calibration.
+   :param -magzp: (optional) external magnitude zeropoint and
+                  uncertainty to apply to every frame instead of
+                  catalog-based calibration
+   :param -magzp_keyword: (optional) FITS header keyword containing a
+                          per-frame magnitude zeropoint; each frame is
+                          calibrated with its own header value
+   :param -magzp_sig_keyword: (optional) FITS header keyword containing a
+                              per-frame zeropoint uncertainty
+   :param -magzp_sig: (optional) fixed zeropoint uncertainty to use with
+                      ``-magzp_keyword`` when no uncertainty keyword is
+                      available
    :param images: images to run `pp_calibrate` on
 
    
@@ -456,7 +477,43 @@ Functions that provide additional functionality:
    richer uncertainty, exposure-time, seeing, photometric-catalog, and
    FITS-provenance fields; the summary file explicitly lists the
    ADES-only values that cannot be represented in the 80-column
-   companion file.
+   companion file. The default contact is ``coc123@uw.edu``. The 80-column
+   header always includes ``ACK <target> Small-body Search and Rescue`` and
+   ``AC2 coc123@uw.edu, murtagh@uw.edu``. Comma- or semicolon-separated
+   measurer strings are split into individual ADES measurer records and are
+   joined on the 80-column ``MEA`` line. When total astrometric uncertainties
+   are missing, the validation step falls back to source-measurement
+   uncertainties and records the substitution in the summary.
+
+
+.. function:: pptool_catalina_lemmon60 (full_images_dir [--target string] [--impact-summary csv] [--fallback-group integer] [--refresh-backup])
+
+   run the Catalina Lemmon 60-inch PP workflow
+
+   :param full_images_dir: directory containing the archive ``*.fz``
+                           image products
+   :param --target: (optional) target name for PP and output filenames;
+                    default: ``2020 VS6``
+   :param --impact-summary: (optional) orbit-impact summary CSV used to
+                            build fallback ``pp_distill -positions``
+                            input if Horizons recovery produces no
+                            usable target rows
+   :param --fallback-group: (optional) impact-summary group to use for
+                            fallback positions; default: ``3``
+   :param --refresh-backup: (optional) recreate ``originals_backup.tar``
+                            even if it already exists
+
+   This sidecar is intended for Catalina Lemmon 60-inch compressed
+   extension-FITS image sets. It creates ``originals_backup.tar`` before
+   touching working files, converts each archive ``*.fz`` image into a
+   PP-ready primary-HDU ``cl60_*.fits`` file, preserves WCS and
+   ``MAGZP``/``PHOTIRMS`` provenance, and writes
+   ``catalina_lemmon60_workflow_manifest.json``. The PP run uses
+   ``CATALINALEM60``, ``-keep_wcs``, and header zeropoints. If the
+   first-pass target photometry is absent or contains no usable rows,
+   the wrapper writes ``positions_group###.dat`` from the requested
+   impact-summary group and reruns only ``pp_distill`` on the matching
+   working frames.
 
 
 .. function:: pp_manident ([-zoom float], images)

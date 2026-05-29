@@ -265,9 +265,26 @@ def resolve_fits_filename(photometry_file: Path, catalog_token: str) -> Path:
         if candidate.exists():
             return candidate.resolve()
 
+    fits_suffixes = (".fits", ".fit", ".fts")
+    token_prefixes = [
+        catalog_token,
+        catalog_token.replace(".ldac", ""),
+        Path(catalog_token).name,
+        Path(catalog_token).name.replace(".ldac", ""),
+    ]
+    for prefix in dict.fromkeys(token_prefixes):
+        if not prefix:
+            continue
+        prefixed = sorted(
+            path for path in photometry_dir.iterdir()
+            if path.suffix.lower() in fits_suffixes and
+            path.name.startswith(prefix))
+        if len(prefixed) == 1:
+            return prefixed[0].resolve()
+
     fits_candidates = sorted(
         path for path in photometry_dir.iterdir()
-        if path.suffix.lower() in (".fits", ".fit", ".fts"))
+        if path.suffix.lower() in fits_suffixes)
     if len(fits_candidates) == 1:
         return fits_candidates[0].resolve()
 

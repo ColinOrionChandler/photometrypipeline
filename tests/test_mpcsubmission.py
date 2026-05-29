@@ -79,6 +79,21 @@ def test_observer_override_replaces_fits_observers(tmp_path):
     assert "! name Beaudin" not in bundle.ades_text
 
 
+def test_resolves_truncated_catalog_token_by_unique_prefix(tmp_path):
+    photometry = tmp_path / "photometry_2014_FU61.dat"
+    row = PHOTOMETRY_TEXT.splitlines()[1].replace(
+        "c4d_test", "OMEGA.2014-04-21T02:44:36.768_chip0")
+    photometry.write_text("# header\n%s\n" % row)
+    full_fits = tmp_path / "OMEGA.2014-04-21T02:44:36.768_chip031.new.fits"
+    write_test_fits(full_fits)
+
+    config = mpcsub.SubmissionConfig(target="2014 FU61", output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert len(bundle.observations) == 1
+    assert bundle.observations[0].source_file == full_fits.resolve()
+
+
 @pytest.mark.skipif(not REAL_CJ155_DIR.exists(),
                     reason="local 2016_CJ155 fixture is unavailable")
 def test_real_2016_cj155_outputs_both_formats(tmp_path):

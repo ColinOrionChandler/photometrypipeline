@@ -15,6 +15,12 @@ documented here.
   submission emails, measurers, ACK text, AC2 contacts, and fallback
   astrometric uncertainty handling.
 
+* 2026-05-29: updated ``pptool_mpcsubmission.py`` FITS-row matching so
+  MPC export works when PP truncates long ``catalog_token`` image names
+  in ``photometry_<target>.dat`` rows (common for OMEGACam-style
+  filenames). Added regression coverage in
+  ``tests/test_mpcsubmission.py`` for truncated-token prefix matching.
+
 * 2026-05-23: imported local telescope/configuration updates, including
   DECam support; ``pp_run`` now passes through ``-telescope``,
   ``-nodeblending``, ``-variable_stars``, ``-positions``,

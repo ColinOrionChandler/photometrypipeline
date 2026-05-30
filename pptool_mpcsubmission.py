@@ -310,6 +310,18 @@ def split_observer_names(observer_header: str | None) -> list[str]:
     return [part for part in parts if part]
 
 
+def _format_observer_name(name: str) -> str:
+    """Return MPC observer style for names written as first/middle/last."""
+
+    parts = name.strip().split()
+    if len(parts) < 2:
+        return name.strip()
+    if all(len(part.rstrip(".")) == 1 for part in parts[:-1]):
+        return " ".join(parts)
+    initials = ["%s." % part[0] for part in parts[:-1] if part]
+    return " ".join(initials + [parts[-1]])
+
+
 def read_fits_metadata(filename: Path) -> FitsMetadata:
     """Extract submission metadata from a FITS image header."""
 
@@ -415,9 +427,11 @@ def derive_observers(observations: list[PhotometryObservation],
     """Return CLI-supplied observers or unique FITS-header observers."""
 
     if config.observers:
-        return config.observers
+        return _unique_preserve_order(
+            _format_observer_name(observer) for observer in config.observers)
     return _unique_preserve_order(
-        observer for obs in observations for observer in obs.metadata.observers)
+        _format_observer_name(observer)
+        for obs in observations for observer in obs.metadata.observers)
 
 
 def split_people(value: str) -> list[str]:

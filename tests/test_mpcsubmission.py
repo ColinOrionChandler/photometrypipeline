@@ -64,6 +64,28 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert obs_lines[0].endswith("W84")
 
 
+def test_observer_names_use_initials_for_first_last_names(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        observers=["David James", "Liz Buckley-Geer",
+                   "C. O. Chandler", "John Quincy Public"],
+        output_dir=tmp_path,
+    )
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert (
+        "OBS D. James, L. Buckley-Geer, C. O. Chandler, J. Q. Public" in
+        bundle.obs80_text)
+    assert "! name D. James" in bundle.ades_text
+    assert "! name L. Buckley-Geer" in bundle.ades_text
+    assert "! name C. O. Chandler" in bundle.ades_text
+    assert "! name J. Q. Public" in bundle.ades_text
+
+
 def test_observer_override_replaces_fits_observers(tmp_path):
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT)

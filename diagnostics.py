@@ -249,11 +249,20 @@ class Prepare_Diagnostics(Diagnostics_Html):
         # create frame image
         imgdat = hdulist[0].data.astype(np.float64)
 
-        # normalize imgdat to pixel values 0 < px < 1
-        imgdat[np.where(np.isnan(imgdat))[0]] = np.nanmedian(imgdat)
-        imgdat = np.clip(imgdat, np.percentile(imgdat, 1),
-                         np.percentile(imgdat, 99))
-        imgdat = (imgdat-np.min(imgdat)) / np.max(imgdat-np.min(imgdat)+0.1)
+        # Normalize preview data without letting NaN/Inf-heavy frames abort PP.
+        finite = np.isfinite(imgdat)
+        if np.any(finite):
+            imgdat[~finite] = np.nanmedian(imgdat[finite])
+            lo, hi = np.nanpercentile(imgdat, [1, 99])
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+                lo, hi = np.nanmin(imgdat), np.nanmax(imgdat)
+            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                imgdat = np.clip(imgdat, lo, hi)
+                imgdat = (imgdat-np.min(imgdat)) / (np.max(imgdat)-np.min(imgdat))
+            else:
+                imgdat = np.zeros_like(imgdat)
+        else:
+            imgdat = np.zeros_like(imgdat)
 
         # resize image larger than lg_image_size_px on one side
         imgdat = resize(imgdat,

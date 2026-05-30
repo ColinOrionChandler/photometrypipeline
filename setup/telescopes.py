@@ -4560,7 +4560,10 @@ cfhtmegaprime_param = {
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
     'filter': 'FILTER',  # filter keyword # 2/18/2021
-    'filter_translations': {'r.MP9602': 'r'},
+    'filter_translations': {'u.MP9302': 'u', 'g.MP9401': 'g',
+                            'r.MP9602': 'r', 'i.MP9701': 'i',
+                            'z.MP9801': 'z', 'u': 'u', 'g': 'g',
+                            'r': 'r', 'i': 'i', 'z': 'z'},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -4885,7 +4888,8 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'ZTFMOSAIC', 'NOTALFOSC', 'NEXT', 'GTCOSIRIS',
                           'LBTLBC',# added LBTLBC 7/8/2021 COC
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
-                          'PWFLINPOI', 'CATALINALEM60', 'PANSTARRS1']
+                          'PWFLINPOI', 'CFHTMEGAPRIME',
+                          'CATALINALEM60', 'PANSTARRS1']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword

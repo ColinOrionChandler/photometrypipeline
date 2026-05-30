@@ -335,7 +335,8 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
         cat_ra = np.asarray(cat['ra_deg'][cat_idx], dtype=float)
         cat_dec = np.asarray(cat['dec_deg'][cat_idx], dtype=float)
 
-        dra = (ref_ra-cat_ra)*3600*np.cos(np.deg2rad(ref_dec))
+        dra = (ref_ra-cat_ra+180) % 360-180
+        dra *= 3600*np.cos(np.deg2rad(ref_dec))
         ddec = (ref_dec-cat_dec)*3600
         # Remove the bulk catalog offset; this column reports random scatter.
         dra -= np.nanmedian(dra)
@@ -519,6 +520,9 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
                   (clipping_steps[idx][0], clipping_steps[idx][1],
                    len(clipping_steps[idx][3]), len(clipping_steps[0][3])))
 
+        ra_sig, dec_sig, pos_sig = astrometric_residual_sigmas(
+            ref_cat, cat, match, clipping_steps[idx][3])
+
         # write calibration catalog to file
         if conf.save_caldata:
             caldata_filename = cat.catalogname[:-5]+conf.save_caldata_suffix
@@ -574,8 +578,6 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
                                 clipping_steps[idx][1]**2)],
                        ['F', 'F'])
 
-        ra_sig, dec_sig, pos_sig = astrometric_residual_sigmas(
-            ref_cat, cat, match, clipping_steps[idx][3])
         cat.add_fields(['ASTR_SIG_RA', 'ASTR_SIG_DEC', 'ASTR_SIG_POS'],
                        [np.ones(cat.shape[0])*ra_sig,
                         np.ones(cat.shape[0])*dec_sig,

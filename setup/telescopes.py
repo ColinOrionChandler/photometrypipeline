@@ -4800,6 +4800,66 @@ catalinalem60_param = {
 }
 
 
+panstarrs1_param = {
+    'telescope_instrument': 'Pan-STARRS1/GPC1',
+    'telescope_keyword': 'PANSTARRS1',
+    'observatory_code': 'F51',
+    'secpix': (0.25, 0.25),
+    'ext_coeff': 0.05,
+
+    # PS1 warp products have useful WCS already; the workflow helper runs PP
+    # with -keep_wcs and these orientation settings are only fallbacks.
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('CELL.XBIN', 'CELL.YBIN'),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'CRVAL1',
+    'dec': 'CRVAL2',
+    'radec_separator': 'XXX',
+    'date_keyword': 'MIDTIMJD',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'FILTER',
+    'filter_translations': {'g.00000': 'g', 'r.00000': 'r',
+                            'i.00000': 'i', 'z.00000': 'z',
+                            'y.00000': 'y',
+                            'gp1': 'g', 'rp1': 'r', 'ip1': 'i',
+                            'zp1': 'z', 'yp1': 'y',
+                            'g': 'g', 'r': 'r', 'i': 'i',
+                            'z': 'z', 'y': 'y'},
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+
+    # source extractor settings
+    'source_minarea': 5,
+    'source_snr': 3,
+    'aprad_default': 5,
+    'aprad_range': [2, 12],
+    'sex-config-file': rootpath+'/setup/generic.sex',
+    'mask_file': {},
+
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/generic.scamp',
+    'reg_max_mag': 21,
+    'reg_search_radius': 0.5,
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,MJD-OBS,MIDTIMJD,RA,DEC,CRVAL1,CRVAL2,' +
+                      'CELL.XBIN,CELL.YBIN,AIRMASS,MAGZP,MAGZPSIG,' +
+                      'TEL_KEYW,ORIGFILE,ORIGEXT,NANNPIX,NANFILL'),
+    'swarp-config-file': rootpath+'/setup/generic.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+}
+
+
 # access functions for telescope configurations
 
 
@@ -4825,7 +4885,7 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'ZTFMOSAIC', 'NOTALFOSC', 'NEXT', 'GTCOSIRIS',
                           'LBTLBC',# added LBTLBC 7/8/2021 COC
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
-                          'PWFLINPOI', 'CATALINALEM60']
+                          'PWFLINPOI', 'CATALINALEM60', 'PANSTARRS1']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
@@ -4918,6 +4978,10 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'DECAM_BKP3':        'DECAM', # 7/23/2021 COC
                           'SN 110-106/165685-06': 'CATALINALEM60',
                           '60-INCH TELESCOPE': 'CATALINALEM60',
+                          'GPC1': 'PANSTARRS1',
+                          'PS1': 'PANSTARRS1',
+                          'Pan-STARRS1': 'PANSTARRS1',
+                          'PANSTARRS1': 'PANSTARRS1',
                         }
 
 # translate telescope keyword into parameter set defined here
@@ -4995,7 +5059,8 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'DECAM':         decam_param, #6/12/17 COC/AMC: added
                         'DECam':decam_param, # 7/23/2021 COC
                         'PWFLINPOI': pwflinpoi_param,
-                        'CATALINALEM60': catalinalem60_param
+                        'CATALINALEM60': catalinalem60_param,
+                        'PANSTARRS1': panstarrs1_param
 }
 
 

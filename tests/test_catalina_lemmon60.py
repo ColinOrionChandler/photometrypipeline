@@ -52,6 +52,39 @@ def test_header_zeropoints_are_applied_per_frame(tmp_path):
     assert np.isclose(cat_b["e_Vmag"][0], np.hypot(0.1, 0.03))
 
 
+def test_astrometric_sigmas_use_matched_sources_before_ref_join(monkeypatch,
+                                                                tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(pp_calibrate.conf, "save_caldata", False)
+
+    ref_cat = catalog("ref")
+    ref_cat.add_fields(
+        ["ra_deg", "dec_deg", "Rmag", "e_Rmag", "ident"],
+        [
+            [359.99990, 0.00010, 0.00020, 359.99970, 0.00030, 359.99991],
+            [0.00000, 0.00008, -0.00011, 0.00022, -0.00028, 0.00001],
+            [18.0, 18.5, 19.0, 17.5, 19.5, 18.05],
+            [0.02, 0.02, 0.02, 0.02, 0.02, 0.02],
+            [1, 2, 3, 4, 5, 6],
+        ],
+    )
+    inst_cat = catalog("synthetic.ldac")
+    inst_cat.add_fields(
+        ["ra_deg", "dec_deg", "MAG_APER", "MAGERR_APER"],
+        [
+            [359.99991, 0.00011, 0.00019, 359.99969, 0.00031],
+            [0.00001, 0.00009, -0.00010, 0.00021, -0.00027],
+            [-10.0, -9.5, -9.0, -10.5, -8.5],
+            [0.01, 0.01, 0.01, 0.01, 0.01],
+        ],
+    )
+
+    pp_calibrate.derive_zeropoints(ref_cat, [inst_cat], "R", 3)
+
+    assert np.nanmax(inst_cat["ASTR_SIG_POS"]) < 1.0
+    assert np.nanmax(inst_cat["ASTR_SIG_RA"]) < 1.0
+
+
 def test_convert_compressed_extension_to_primary_fits(tmp_path):
     raw_path = tmp_path / "raw_image.fz"
     working_path = tmp_path / "cl60_0001.fits"

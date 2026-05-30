@@ -67,7 +67,8 @@ def test_convert_to_pp_fits_flattens_repairs_nans_and_sets_headers(tmp_path):
         assert hdulist[0].header["OBJECT"] == "2014_FU61"
         assert hdulist[0].header["NANNPIX"] == 1
         assert np.isclose(hdulist[0].header["NANFILL"], 3.0)
-        assert np.isclose(hdulist[0].header["MAGZP"], 24.5)
+        assert np.isclose(hdulist[0].header["MAGZP"],
+                          24.5 + 2.5 * np.log10(40.0))
         assert np.isclose(hdulist[0].header["MAGZPSIG"], 0.03)
         assert hdulist[0].header["MIDTIMJD"] > 2400000.5
 

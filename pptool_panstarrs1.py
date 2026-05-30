@@ -223,7 +223,14 @@ def convert_to_pp_fits(raw_path, working_path, original_index,
             header['NANFILL'] = (fill_value, 'replacement value for NaNs')
 
         if 'FPA.ZP' in header:
-            header['MAGZP'] = (float(header['FPA.ZP']), 'PS1 FPA zeropoint')
+            # PS1 warp pixels are total counts, while FPA.ZP is calibrated for
+            # count rates.  PP measures total-count instrumental magnitudes.
+            exptime = float(header.get('EXPTIME',
+                                       header.get('EXPOSURE', 0.0)) or 0.0)
+            magzp = float(header['FPA.ZP'])
+            if exptime > 0:
+                magzp += 2.5*np.log10(exptime)
+            header['MAGZP'] = (magzp, 'PS1 exposure-normalized zeropoint')
             header['MAGZPSIG'] = (float(magzp_sig), 'assumed zeropoint sigma')
 
         fits.PrimaryHDU(data=image, header=header).writeto(

@@ -1,0 +1,7 @@
+Find_Orb input preparation
+baseline observations: 42
+new DECam observations: 15
+combined observations: 57
+
+The combined file keeps the prior !-flagged 2014 W84 lines from the historical baseline
+and appends the new unflagged photometrypipeline measurements.

@@ -1,0 +1,32 @@
+run photometry pipeline on 1 DECAM i frames
+preparing c4d_161223_033551_ooi_i_ls10_chip60-N31.fits
+creating diagnostic output
+
+----- derive optimum photometry aperture
+
+* extract sources from 1 images using aperture radius 4.00px
+1233 sources extracted from frame c4d_161223_033551_ooi_i_ls10_chip60-N31.fits
+
+----- run photometric calibration
+
+(1166, 31) (sources, columns) read from c4d_161223_033551_ooi_i_ls10_chip60-N31.fits
+query Vizier for SDSS-R9 at  44.994/+3.245 in a 0.16 deg radius 231 sources retrieved.
+231 sources downloaded from SDSS-R9
+SDSS-R9 i
+231 sources with accurate magnitudes in i band
+zeropoint for c4d_161223_033551_ooi_i_ls10_chip60-N31.ldac: 29.425+-0.033 (56/113 reference stars)
+write calibrated data into database files
+
+----- distill photometry results
+
+#------ Identify Targets
+# target positions as a function of time manually provided...  1.0 object(s) found
+# pick control star...  done!
+#-----------------------
+2 potential target(s) per frame identified.
+write photometry results for 2013_RN30
+write photometry results for Control Star
+extracting thumbnail images
+
+Done!
+

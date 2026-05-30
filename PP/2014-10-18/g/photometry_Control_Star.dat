@@ -1,0 +1,22 @@
+#                           filename     julian_date      mag    sig     source_ra    source_dec   [1]   [2]   [3]   [4]    [5]       ZP ZP_sig inst_mag in_sig               [6] [7] [8]    [9]          [10] FWHM mag_src_sig mag_cal_sig mag_tot_sig ra_src_sig dec_src_sig pos_src_sig ra_ast_sig dec_ast_sig pos_ast_sig ra_tot_sig dec_tot_sig pos_tot_sig
+ c4d_141018_043456_ooi_g_ls10_chip25 2456948.6874547  21.3067 0.0531    9.17159416   +0.91600048  0.04 -0.01  0.00  0.00 500.00  31.6951 0.0524 -10.3883 0.0084 SDSS-R9 g   3 DECam      APER 2.21  0.0084  0.0524  0.0531  0.0081  0.0079  0.0113  0.1162  0.0772  0.1395  0.1165  0.0776  0.1399
+ c4d_141018_044343_ooi_g_ls10_chip25 2456948.6935645  21.3154 0.0525    9.17159452   +0.91600071  0.04 -0.01  0.00  0.00 500.00  31.6825 0.0518 -10.3671 0.0085 SDSS-R9 g   3 DECam      APER 2.22  0.0085  0.0518  0.0525  0.0081  0.0079  0.0113  0.1154  0.0772  0.1389  0.1157  0.0776  0.1393
+#c4d_141018_050120_ooi_g_ls10_chip32 2456948.7057996  24.4897 0.1572    9.17036049   +0.83897758  4.48 277.27  0.00  0.00 500.00  31.6462 0.0518  -7.1566 0.1484 SDSS-R9 g   0 DECam      APER 1.99  0.1484  0.0518  0.1572  0.0629  0.0633  0.0892  0.0982  0.0873  0.1314  0.1166  0.1078  0.1588
+#c4d_141018_051006_ooi_g_ls10_chip32 2456948.7119032  24.8037 0.2056    9.17420689   +0.83934948 -9.37 275.93  0.00  0.00 500.00  31.6419 0.0527  -6.8382 0.1988 SDSS-R9 g   2 DECam      APER 2.39  0.1988  0.0527  0.2056  0.1303  0.1305  0.1844  0.0887  0.0886  0.1254  0.1576  0.1578  0.2230
+#c4d_141018_051855_ooi_g_ls10_chip32 2456948.7180205  24.3962 0.1567    9.16229534   +0.84046641 33.52 271.91  0.00  0.00 500.00  31.5763 0.0545  -7.1801 0.1469 SDSS-R9 g   0 DECam      APER 2.40  0.1469  0.0545  0.1567  0.0765  0.0765  0.1081  0.1003  0.0905  0.1351  0.1262  0.1184  0.1731
+ c4d_141018_053632_ooi_g_ls10_chip25 2456948.7302605  21.3005 0.0576    9.17160548   +0.91599757  0.00  0.00  0.00  0.00 500.00  31.6443 0.0569 -10.3439 0.0089 SDSS-R9 g   3 DECam      APER 2.22  0.0089  0.0569  0.0576  0.0085  0.0084  0.0120  0.1133  0.0793  0.1383  0.1136  0.0798  0.1388
+#
+# [1]: predicted_RA - source_RA [arcsec]
+# [2]: predicted_Dec - source_Dec [arcsec]
+# [3,4]: manual target offsets in RA and DEC [arcsec]
+# [5]: exposure time (s)
+# [6]: photometric catalog
+# [7]: photometric band
+# [8]: Source Extractor flag
+# [9]: telescope/instrument
+# [10]: photometry method
+# *_src_sig: source measurement uncertainty
+# *_cal_sig: photometric calibration uncertainty
+# *_ast_sig: astrometric field uncertainty
+# *_tot_sig: quadrature-combined uncertainty
+# position uncertainties are in arcsec

@@ -4634,6 +4634,7 @@ decam_param = {
     'filter_translations'  : { 'VR DECam c0007 6300.0 2600.0': 'V',#'VR'#6/12/17 COC/AMC mapping to none, like DCT etc; disabling rest#changed to V instead of None 7/14/17 AMC/COC
                                'z DECam SDSS c0004 9260.0 1520.0':'z', #7/14/17 AMC/COC Added filter to test DECam image from NOAO website
                                'r DECam SDSS c0002 6415.0 1480.0':'r',  #7/19/17 AMC Added known  DECam Filter
+                               'i DECam SDSS c0003 7835.0 1470.0':'i', # 5/30/2026 COC
                                 'g DECam SDSS c0001 4720.0 1520.0':'g', # 5/23/2026 COC
 #                              'V': 'V', 'R': 'R', 'B': 'B', 'VR': None,
 #                              'I': 'I', 'SDSS-U' : 'u', 'SDSS-G' : 'g',

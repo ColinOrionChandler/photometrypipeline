@@ -1,0 +1,19 @@
+#                           filename     julian_date      mag    sig     source_ra    source_dec   [1]   [2]   [3]   [4]    [5]       ZP ZP_sig inst_mag in_sig               [6] [7] [8]    [9]          [10] FWHM mag_src_sig mag_cal_sig mag_tot_sig ra_src_sig dec_src_sig pos_src_sig ra_ast_sig dec_ast_sig pos_ast_sig ra_tot_sig dec_tot_sig pos_tot_sig
+ c4d_141018_061008_ooi_r_ls10_chip25 2456948.7538538  20.1378 0.0672    9.31855239   +0.85476287 -0.00 -0.00  0.00  0.00 450.00  31.7138 0.0670 -11.5760 0.0049 SDSS-R9 r   0 DECam      APER 1.12  0.0049  0.0670  0.0672  0.0029  0.0030  0.0042  0.1266  0.0849  0.1524  0.1266  0.0849  0.1525
+#c4d_141018_062606_ooi_r_ls10_chip32 2456948.7649046  23.8312 0.1549    9.32201944   +0.84167333 -12.49 47.12  0.00  0.00 450.00  31.6633 0.0643  -7.8321 0.1409 SDSS-R9 r   0 DECam      APER 2.36  0.1409  0.0643  0.1549  0.0996  0.0997  0.1409  0.0963  0.0941  0.1346  0.1385  0.1371  0.1949
+ c4d_141018_064159_ooi_r_ls10_chip25 2456948.7759799  20.1269 0.0695    9.31855137   +0.85476242  0.00  0.00  0.00  0.00 450.00  31.6621 0.0693 -11.5352 0.0054 SDSS-R9 r   0 DECam      APER 1.21  0.0054  0.0693  0.0695  0.0035  0.0035  0.0049  0.1213  0.0822  0.1466  0.1214  0.0823  0.1466
+#
+# [1]: predicted_RA - source_RA [arcsec]
+# [2]: predicted_Dec - source_Dec [arcsec]
+# [3,4]: manual target offsets in RA and DEC [arcsec]
+# [5]: exposure time (s)
+# [6]: photometric catalog
+# [7]: photometric band
+# [8]: Source Extractor flag
+# [9]: telescope/instrument
+# [10]: photometry method
+# *_src_sig: source measurement uncertainty
+# *_cal_sig: photometric calibration uncertainty
+# *_ast_sig: astrometric field uncertainty
+# *_tot_sig: quadrature-combined uncertainty
+# position uncertainties are in arcsec

@@ -1,0 +1,5 @@
+DATA_ROOT=/Volumes/uranus/COC/SBSAR/2013_RN30/CTIO-4m_DECam
+RESULTS_CSV=/Users/orionadmin/Dropbox/School/Research/Objects/Lost Centaur/2013_RN30/results.csv
+PP_ROOT=/Users/orionadmin/GitHub/photometrypipeline/PP
+extracted=16
+skipped=12

@@ -20,7 +20,7 @@ from astropy.time import Time
 DEFAULT_ASTCAT = "Gaia2"
 DEFAULT_CONTACT = "coc123@uw.edu"
 DEFAULT_AC2_CONTACTS = "coc123@uw.edu, murtagh@uw.edu"
-DEFAULT_MEASURER = "C. O. Chandler"
+DEFAULT_MEASURER = "C. O. Chandler, J. Murtagh"
 DEFAULT_OBSERVATORY_CODE = "W84"
 DEFAULT_ACK_SUFFIX = "Small-body Search and Rescue"
 DEFAULT_SUBMITTER = "C. O. Chandler"

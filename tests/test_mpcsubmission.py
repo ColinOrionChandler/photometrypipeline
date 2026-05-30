@@ -50,7 +50,10 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert "|2016 CJ155||CCD|W84|" in bundle.ades_text
     assert "|Gaia2|SDSS-R9|21.3285|0.0877|r|" in bundle.ades_text
     assert "! name Beaudin" in bundle.ades_text
+    assert "! name C. O. Chandler" in bundle.ades_text
+    assert "! name J. Murtagh" in bundle.ades_text
     assert "COD W84" in bundle.obs80_text
+    assert "MEA C. O. Chandler, J. Murtagh" in bundle.obs80_text
 
     obs_lines = [
         line for line in bundle.obs80_text.splitlines()

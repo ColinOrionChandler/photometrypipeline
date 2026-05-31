@@ -1,0 +1,77 @@
+{
+  "num": 1,
+  "ids":
+  [
+    "2013 RN30"
+  ],
+  "objects":
+  {
+    "2013 RN30":
+    {
+      "object": "2013 RN30",
+      "packed": "K13R30N",
+      "created": 2461191.34320,
+      "created iso": "2026-05-30T20:14:12Z",
+      "Find_Orb_version": 2461167.50000,
+      "Find_Orb_version_iso": "2026-05-07T00:00:00Z",
+      "elements":
+      {
+        "central body": "Sun",
+        "frame": "J2000 ecliptic",
+        "reference": "Find_Orb",
+        "epoch_iso": "2016-12-25T00:00:00Z",
+        "epoch":  2457747.50000000,
+        "P": 19235.1043258860554, "P sigma": 1.29,
+        "M":  15.5468722894154, "M sigma": 0.0010,
+        "n":   0.0187157809961, "n sigma": 1.25e-6,
+        "a":  14.0496038725247, "a sigma": 0.000628,
+        "e":   0.4219181029284, "e sigma": 2.3e-5,
+        "q":   8.1218216597337, "q sigma": 3.99e-5,
+        "Q":  19.9773860853158, "Q sigma": 0.00122,
+        "i":  16.6236830111604, "i sigma": 0.000047,
+        "arg_per":  187.3787806118609, "arg_per sigma":  0.00041,
+        "asc_node": 182.1318352270314, "asc_node sigma": 0.000037,
+        "Tp": 2456916.81747103, "Tp sigma": 0.00853,
+        "Tp_iso": "2014-09-16T07:37:09.497Z",
+        "H":  12.94,
+        "G":   0.15,
+        "rms_residual": 0.16741,
+        "weighted_rms_residual": 0.5283,
+        "n_resids": 106,
+        "U": 3.6286,
+        "p_NEO": 0.0000,
+        "MOIDs":
+        {
+          "Mercury" : 7.771227,
+          "Venus" : 7.396002,
+          "Earth" : 7.121486,
+          "Mars" : 6.719223,
+          "Jupiter" : 3.169928,
+          "Saturn" : 1.258566,
+          "Uranus" : 1.536484,
+          "Neptune" : 10.302329 
+        }
+      },
+      "observations":
+      {
+        "count": 53,
+        "used": 53,
+        "earliest": 2456533.03314000,
+        "latest": 2457747.63429000,
+        "earliest iso": "2013-08-28T12:47:43.296Z",
+        "latest iso": "2016-12-25T03:13:22.656Z",
+        "earliest_used": 2456533.03314000,
+        "latest_used": 2457747.63429000,
+        "earliest_used iso": "2013-08-28T12:47:43.296Z",
+        "latest_used iso": "2016-12-25T03:13:22.656Z",
+        "earliest_unbanned": 2456533.03314000,
+        "latest_unbanned": 2457747.63429000,
+        "earliest_unbanned iso": "2013-08-28T12:47:43.296Z",
+        "latest_unbanned iso": "2016-12-25T03:13:22.656Z",
+        "residuals":
+        [
+        ]
+      }
+    }
+  }
+}

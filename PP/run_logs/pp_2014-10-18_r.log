@@ -1,0 +1,40 @@
+run photometry pipeline on 3 DECAM r frames
+preparing c4d_141018_061008_ooi_r_ls10_chip25-S2.fits
+preparing c4d_141018_062606_ooi_r_ls10_chip32-N2.fits
+preparing c4d_141018_064159_ooi_r_ls10_chip25-S2.fits
+creating diagnostic output
+
+----- derive optimum photometry aperture
+
+* extract sources from 3 images using aperture radius 4.00px
+3094 sources extracted from frame c4d_141018_064159_ooi_r_ls10_chip25-S2.fits
+2974 sources extracted from frame c4d_141018_062606_ooi_r_ls10_chip32-N2.fits
+3388 sources extracted from frame c4d_141018_061008_ooi_r_ls10_chip25-S2.fits
+
+----- run photometric calibration
+
+(3209, 31) (sources, columns) read from c4d_141018_061008_ooi_r_ls10_chip25-S2.fits
+(2789, 31) (sources, columns) read from c4d_141018_062606_ooi_r_ls10_chip32-N2.fits
+(2926, 31) (sources, columns) read from c4d_141018_064159_ooi_r_ls10_chip25-S2.fits
+query Vizier for SDSS-R9 at   9.245/+0.832 in a 0.21 deg radius 394 sources retrieved.
+394 sources downloaded from SDSS-R9
+SDSS-R9 r
+391 sources with accurate magnitudes in r band
+zeropoint for c4d_141018_061008_ooi_r_ls10_chip25-S2.ldac: 31.714+-0.067 (54/108 reference stars)
+zeropoint for c4d_141018_062606_ooi_r_ls10_chip32-N2.ldac: 31.663+-0.064 (50/100 reference stars)
+zeropoint for c4d_141018_064159_ooi_r_ls10_chip25-S2.ldac: 31.662+-0.069 (58/117 reference stars)
+write calibrated data into database files
+
+----- distill photometry results
+
+#------ Identify Targets
+# target positions as a function of time manually provided...  1.0 object(s) found
+# pick control star...  done!
+#-----------------------
+2 potential target(s) per frame identified.
+write photometry results for 2013_RN30
+write photometry results for Control Star
+extracting thumbnail images
+
+Done!
+

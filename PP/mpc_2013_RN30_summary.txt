@@ -1,0 +1,34 @@
+MPC submission sidecar summary
+Target: 2013 RN30
+Packed target: K13R30N
+Input: /Users/orionadmin/GitHub/photometrypipeline/PP
+Observations: 15
+Observatory code: W84
+Astrometric catalog: Gaia2
+Photometric catalog(s): SDSS-R9
+Submitter: C. O. Chandler
+Measurer: C. O. Chandler, J. Murtagh
+Contact: coc123@uw.edu
+Observers: David James, Simon Birrer, Liz Buckley-Geer, Brian Nord, Ting Li, Kathy Vivas, Dillon Brout
+ADES output: /Users/orionadmin/GitHub/photometrypipeline/PP/mpc_2013_RN30_ADES.psv
+80-column output: /Users/orionadmin/GitHub/photometrypipeline/PP/mpc_2013_RN30_80col.txt
+Summary output: /Users/orionadmin/GitHub/photometrypipeline/PP/mpc_2013_RN30_summary.txt
+ADES-only fields not represented in 80-column: rmsRA, rmsDec, rmsMag, photCat, exp, seeing, remarks, submitter/measurer context
+Source FITS files:
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/g/c4d_141018_044343_ooi_g_ls10_chip25-S2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/g/c4d_141018_050120_ooi_g_ls10_chip32-N2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/g/c4d_141018_051006_ooi_g_ls10_chip32-N2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/g/c4d_141018_051855_ooi_g_ls10_chip32-N2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/g/c4d_141018_053632_ooi_g_ls10_chip25-S2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/r/c4d_141018_061008_ooi_r_ls10_chip25-S2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/r/c4d_141018_062606_ooi_r_ls10_chip32-N2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/r/c4d_141018_064159_ooi_r_ls10_chip25-S2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/i/c4d_141018_071029_ooi_i_ls11_chip25-S2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-18/i/c4d_141018_072306_ooi_i_ls11_chip25-S2.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2014-10-29/r/c4d_141029_050239_ooi_r_ls9_chip41-N11.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2016-12-23/i/c4d_161223_033551_ooi_i_ls10_chip60-N31.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2016-12-23/r/c4d_161223_033747_ooi_r_ls9_chip22-S12.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2016-12-25/i/c4d_161225_031300_ooi_i_ls10_chip60-N31.fits
+  /Users/orionadmin/GitHub/photometrypipeline/PP/2016-12-25/g/c4d_161225_031457_ooi_g_ls9_chip22-S12.fits
+Warnings:
+  none

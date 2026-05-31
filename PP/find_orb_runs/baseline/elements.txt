@@ -1,0 +1,27 @@
+Orbital elements:  2013 RN30
+   Perihelion 2014 Sep 20.02720 +/- 0.94 TT =  0:39:10 (JD 2456920.52720)
+Epoch 2014 Aug 27.0 TT = JDT 2456896.5                           Find_Orb
+M 359.55366369 +/- 0.017            (J2000 ecliptic)
+n   0.01857629 +/- 2.27e-6          Peri.  187.56958 +/- 0.047
+a  14.1198490 +/- 0.00115           Node   182.12350 +/- 0.00009
+e   0.4245673 +/- 4.38e-5           Incl.   16.61385 +/- 0.00025
+P  53.05729                H 12.84  G  0.15   U  4.4
+q 8.12502217 +/- 0.000389    Q 20.1146758 +/- 0.00217
+38 of 42 observations 2013 Aug. 28-2014 Aug. 27; mean residual 0".19
+# State vector (heliocentric equatorial J2000):
+#   +8.038280060325  +1.166223017036  +0.225586816480 AU
+#   -1.095356941971  +7.069595950228  +0.835842211529 mAU/day
+# MOIDs: Me  7.774616 Ve  7.399201 Ea  7.124776 Ma  6.722229
+# MOIDs: Ju  3.173325 Sa  1.256959 Ur  1.639980 Ne 10.165872
+# 2 oppositions
+# Elements written: 30 May 2026 20:12:38 (JD 2461191.342115)
+# Full range of obs: 2013 Aug. 28-2014 Oct. 18 (42 observations)
+# Find_Orb ver: 2026 May 07
+# Perturbers: 00000000 (unperturbed orbit);  JPL DE-430
+# Diameter 11.1 km (assuming 10% albedo)
+# Score: 0.517843
+#  $Name=2013%20RN30  $Ty=2014  $Tm=09  $Td=20.027203  $MA=359.55366
+#  $ecc=0.4245673  $Eqnx=2000.
+#  $a=14.1198490  $Peri=187.56958  $Node=182.12351  $Incl=16.61386
+#  $EpJD=2456896.500  $q=8.125022  $T=2456920.527203  $H=12.8
+# Sigmas avail: 1

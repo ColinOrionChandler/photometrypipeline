@@ -1,0 +1,52 @@
+run photometry pipeline on 6 DECAM g frames
+preparing c4d_141018_043456_ooi_g_ls10_chip25-S2.fits
+preparing c4d_141018_044343_ooi_g_ls10_chip25-S2.fits
+preparing c4d_141018_050120_ooi_g_ls10_chip32-N2.fits
+preparing c4d_141018_051006_ooi_g_ls10_chip32-N2.fits
+preparing c4d_141018_051855_ooi_g_ls10_chip32-N2.fits
+preparing c4d_141018_053632_ooi_g_ls10_chip25-S2.fits
+creating diagnostic output
+
+----- derive optimum photometry aperture
+
+* extract sources from 6 images using aperture radius 4.00px
+3681 sources extracted from frame c4d_141018_053632_ooi_g_ls10_chip25-S2.fits
+3997 sources extracted from frame c4d_141018_043456_ooi_g_ls10_chip25-S2.fits
+3741 sources extracted from frame c4d_141018_044343_ooi_g_ls10_chip25-S2.fits
+3207 sources extracted from frame c4d_141018_051855_ooi_g_ls10_chip32-N2.fits
+3397 sources extracted from frame c4d_141018_051006_ooi_g_ls10_chip32-N2.fits
+3517 sources extracted from frame c4d_141018_050120_ooi_g_ls10_chip32-N2.fits
+
+----- run photometric calibration
+
+(3767, 31) (sources, columns) read from c4d_141018_043456_ooi_g_ls10_chip25-S2.fits
+(3549, 31) (sources, columns) read from c4d_141018_044343_ooi_g_ls10_chip25-S2.fits
+(3212, 31) (sources, columns) read from c4d_141018_050120_ooi_g_ls10_chip32-N2.fits
+(3124, 31) (sources, columns) read from c4d_141018_051006_ooi_g_ls10_chip32-N2.fits
+(2947, 31) (sources, columns) read from c4d_141018_051855_ooi_g_ls10_chip32-N2.fits
+(3465, 31) (sources, columns) read from c4d_141018_053632_ooi_g_ls10_chip25-S2.fits
+query Vizier for SDSS-R9 at   9.243/+0.839 in a 0.22 deg radius 411 sources retrieved.
+411 sources downloaded from SDSS-R9
+SDSS-R9 g
+406 sources with accurate magnitudes in g band
+zeropoint for c4d_141018_043456_ooi_g_ls10_chip25-S2.ldac: 31.695+-0.052 (58/117 reference stars)
+zeropoint for c4d_141018_044343_ooi_g_ls10_chip25-S2.ldac: 31.682+-0.052 (56/113 reference stars)
+zeropoint for c4d_141018_050120_ooi_g_ls10_chip32-N2.ldac: 31.646+-0.052 (50/100 reference stars)
+zeropoint for c4d_141018_051006_ooi_g_ls10_chip32-N2.ldac: 31.642+-0.053 (50/100 reference stars)
+zeropoint for c4d_141018_051855_ooi_g_ls10_chip32-N2.ldac: 31.576+-0.054 (50/101 reference stars)
+zeropoint for c4d_141018_053632_ooi_g_ls10_chip25-S2.ldac: 31.644+-0.057 (63/126 reference stars)
+write calibrated data into database files
+
+----- distill photometry results
+
+#------ Identify Targets
+# target positions as a function of time manually provided...  1.0 object(s) found
+# pick control star...  done!
+#-----------------------
+2 potential target(s) per frame identified.
+write photometry results for 2013_RN30
+write photometry results for Control Star
+extracting thumbnail images
+
+Done!
+

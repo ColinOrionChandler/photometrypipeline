@@ -221,8 +221,9 @@ def _float_or_none(value: str) -> float | None:
     return result
 
 
-def parse_photometry_file(filename: Path) -> list[dict[str, str]]:
-    """Read PP photometry rows from a photometry_<target>.dat file."""
+def parse_photometry_file(filename: Path,
+                          require_rows: bool = True) -> list[dict[str, str]]:
+    """Read active PP photometry rows from a photometry_<target>.dat file."""
 
     rows = []
     with filename.open("r") as inf:
@@ -236,7 +237,7 @@ def parse_photometry_file(filename: Path) -> list[dict[str, str]]:
                     (filename, len(values)))
             padded = values + [""] * (len(PHOTOMETRY_COLUMNS) - len(values))
             rows.append(dict(zip(PHOTOMETRY_COLUMNS, padded)))
-    if not rows:
+    if not rows and require_rows:
         raise SubmissionError("no observations found in %s" % filename)
     return rows
 
@@ -372,14 +373,22 @@ def make_observation(photometry_file: Path,
     )
 
 
-def collect_observations(input_path: Path,
-                         config: SubmissionConfig) -> list[PhotometryObservation]:
+def collect_observations(
+        input_path: Path,
+        config: SubmissionConfig,
+        warnings: list[str] | None = None) -> list[PhotometryObservation]:
     """Collect all observations for a target below an input path."""
 
     observations = []
     for photometry_file in discover_photometry_files(input_path,
                                                      config.target):
-        for row in parse_photometry_file(photometry_file):
+        rows = parse_photometry_file(photometry_file, require_rows=False)
+        if not rows:
+            if warnings is not None:
+                warnings.append("skipping %s; no active observations" %
+                                photometry_file)
+            continue
+        for row in rows:
             observations.append(make_observation(photometry_file, row))
     return sorted(observations, key=lambda obs: obs.julian_date)
 
@@ -454,9 +463,15 @@ def derive_telescope_context(observations: list[PhotometryObservation]) -> tuple
                    for obs in observations}
     telescopes = {obs.metadata.telescope for obs in observations
                   if obs.metadata.telescope}
+    telescope_keywords = {obs.metadata.telescope_keyword
+                          for obs in observations
+                          if obs.metadata.telescope_keyword}
     if "DECam" in instruments or "DECam" in {
             obs.metadata.telescope_keyword for obs in observations}:
         return "4.0-m reflector", "4.0", "CCD"
+    if "SPACEWATCH09" in telescope_keywords or any(
+            "Spacewatch 0.9-m" in telescope for telescope in telescopes):
+        return "0.9-m f/3 reflector", "0.9", "CCD"
     if telescopes:
         design = sorted(telescopes)[0]
     else:
@@ -758,8 +773,9 @@ def build_submission(input_path: Path,
                      config: SubmissionConfig) -> SubmissionBundle:
     """Build ADES, 80-column, and summary text for a PP output tree."""
 
-    observations = collect_observations(input_path, config)
-    warnings = validate_observations(observations, config)
+    warnings = []
+    observations = collect_observations(input_path, config, warnings)
+    warnings.extend(validate_observations(observations, config))
     ades_path, obs80_path, summary_path = output_paths(input_path, config)
     ades_text = format_ades_psv(observations, config)
     obs80_text = format_obs80(observations, config)

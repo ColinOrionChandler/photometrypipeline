@@ -4864,6 +4864,61 @@ panstarrs1_param = {
 }
 
 
+spacewatch09_param = {
+    'telescope_instrument': 'Spacewatch 0.9-m Mosaic',
+    'telescope_keyword': 'SPACEWATCH09',
+    'observatory_code': '691',
+    'secpix': (1.0, 1.0),
+    'ext_coeff': 0.05,
+
+    # Spacewatch PDS products include a good WCS; the workflow helper keeps it.
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': (1, 1),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'RA',
+    'dec': 'DEC',
+    'radec_separator': ':',
+    'date_keyword': 'DATE-OBS',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'FILTER',
+    # AstroChipmunk treats Schott OG-515 as a broad r-like proxy for rough
+    # photometry estimates; keep the archive label but calibrate in r.
+    'filter_translations': {'Schott OG-515': 'r', 'OG-515': 'r',
+                            'OG515': 'r', 'r': 'r'},
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+
+    # source extractor settings
+    'source_minarea': 5,
+    'source_snr': 3,
+    'aprad_default': 3,
+    'aprad_range': [2, 10],
+    'sex-config-file': rootpath+'/setup/generic.sex',
+    'mask_file': {},
+
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/generic.scamp',
+    'reg_max_mag': 21,
+    'reg_search_radius': 0.5,
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,DATE-OBS,'
+                      'TIME-OBS,MJD-OBS,MIDTIMJD,RA,DEC,AIRMASS,MAGZP,'
+                      'TEL_KEYW,ORIGFILE,PDSNAME,PPSEQ,CATCHRA,CATCHDEC'),
+    'swarp-config-file': rootpath+'/setup/generic.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+}
+
+
 # access functions for telescope configurations
 
 
@@ -4890,7 +4945,7 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'LBTLBC',# added LBTLBC 7/8/2021 COC
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
                           'PWFLINPOI', 'CFHTMEGAPRIME',
-                          'CATALINALEM60', 'PANSTARRS1']
+                          'CATALINALEM60', 'PANSTARRS1', 'SPACEWATCH09']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
@@ -4987,6 +5042,10 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'PS1': 'PANSTARRS1',
                           'Pan-STARRS1': 'PANSTARRS1',
                           'PANSTARRS1': 'PANSTARRS1',
+                          'Spacewatch Mosaic Camera': 'SPACEWATCH09',
+                          'Spacewatch 0.9-m f/3 prime focus':
+                          'SPACEWATCH09',
+                          'SPACEWATCH09': 'SPACEWATCH09',
                         }
 
 # translate telescope keyword into parameter set defined here
@@ -5065,7 +5124,8 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'DECam':decam_param, # 7/23/2021 COC
                         'PWFLINPOI': pwflinpoi_param,
                         'CATALINALEM60': catalinalem60_param,
-                        'PANSTARRS1': panstarrs1_param
+                        'PANSTARRS1': panstarrs1_param,
+                        'SPACEWATCH09': spacewatch09_param
 }
 
 

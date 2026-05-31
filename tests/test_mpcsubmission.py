@@ -26,6 +26,14 @@ def write_test_fits(path):
     fits.PrimaryHDU(header=header).writeto(path)
 
 
+def write_spacewatch_test_fits(path):
+    header = fits.Header()
+    header["TELESCOP"] = "Spacewatch 0.9-m f/3 prime focus"
+    header["INSTRUME"] = "Spacewatch Mosaic Camera"
+    header["TEL_KEYW"] = "SPACEWATCH09"
+    fits.PrimaryHDU(header=header).writeto(path)
+
+
 def test_target_filename_and_packed_designation():
     assert mpcsub.target_to_filename("2016 CJ155") == "2016_CJ155"
     assert (
@@ -102,6 +110,40 @@ def test_observer_override_replaces_fits_observers(tmp_path):
     assert "! name C. O. Chandler" in bundle.ades_text
     assert "! name A. Collaborator" in bundle.ades_text
     assert "! name Beaudin" not in bundle.ades_text
+
+
+def test_spacewatch_submission_context_uses_09m_telescope(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_spacewatch_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(target="2016 CJ155",
+                                     observatory_code="691",
+                                     output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "! aperture 0.9" in bundle.ades_text
+    assert "TEL 0.9-m f/3 reflector + CCD" in bundle.obs80_text
+
+
+def test_recursive_submission_skips_rejected_only_photometry_files(tmp_path):
+    active_dir = tmp_path / "active"
+    rejected_dir = tmp_path / "rejected"
+    active_dir.mkdir()
+    rejected_dir.mkdir()
+    active_photometry = active_dir / "photometry_2016_CJ155.dat"
+    rejected_photometry = rejected_dir / "photometry_2016_CJ155.dat"
+    active_photometry.write_text(PHOTOMETRY_TEXT)
+    rejected_photometry.write_text("# all rows were rejected by PP\n")
+    write_test_fits(active_dir / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(target="2016 CJ155",
+                                     output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert len(bundle.observations) == 1
+    assert any("skipping" in warning and str(rejected_photometry) in warning
+               for warning in bundle.warnings)
 
 
 def test_resolves_truncated_catalog_token_by_unique_prefix(tmp_path):

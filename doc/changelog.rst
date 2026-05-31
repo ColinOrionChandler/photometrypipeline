@@ -4,6 +4,15 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-05-31: added Spacewatch 0.9-m/PDS support under
+  ``SPACEWATCH09`` and the ``pptool_spacewatch.py`` workflow wrapper.
+  The helper stages full-frame archive FITS products into
+  ``PP/<date>/<band>``, writes PP-ready working files and
+  CATCH-position sidecars, keeps the archive WCS, maps
+  ``Schott OG-515`` to an r-like PP band, and leaves Spacewatch header
+  ``MAGZP`` values as provenance while PP derives zeropoints from
+  catalog stars.
+
 * 2026-05-26: added Catalina Lemmon 60-inch support under
   ``CATALINALEM60`` and the ``pptool_catalina_lemmon60.py`` workflow
   wrapper, including safe raw-file backup, compressed extension-FITS

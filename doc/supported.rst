@@ -100,6 +100,9 @@ observatories/instruments:
 +--------------------------+--------------------+----------------+
 | San Pedro Martir 84cm    | Mexman (E2V CCD)   | MEXMAN         |
 +--------------------------+--------------------+----------------+
+| Spacewatch 0.9m          | Mosaic Camera      | SPACEWATCH09   |
+|                          | (*****)            |                |
++--------------------------+--------------------+----------------+
 | Steward Observatory 90"  | Spacewatch Camera  | STEWARD90SCC   |
 | Bok Telescope            |                    |                |
 +--------------------------+--------------------+----------------+
@@ -145,6 +148,13 @@ images with science data in extension 1. Use
 flatten the data into ``cl60_*.fits`` working files, keep the archive
 WCS, apply ``MAGZP``/``PHOTIRMS`` header zeropoints, and optionally
 rerun ``pp_distill`` with group-position fallback rows.
+
+(*****): Spacewatch PDS/CATCH products can be staged with
+``pptool_spacewatch.py``. The helper downloads full-frame archive FITS
+files under ``PP/<date>/<band>``, writes PP-ready ``spacewatch_*.fits``
+files and CATCH-derived position sidecars, keeps the archive WCS, and
+intentionally lets PP derive photometric zeropoints instead of trusting
+the ambiguous archive ``MAGZP`` header.
 
 It is recommended to stitch images from cameras with multiple amplifiers
 together using the correct orientations. Furthermore, it is recommended to

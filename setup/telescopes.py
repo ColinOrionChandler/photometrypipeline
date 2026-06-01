@@ -4919,6 +4919,60 @@ spacewatch09_param = {
 }
 
 
+sdss_param = {
+    'telescope_instrument': 'SDSS 2.5-m imaging camera',
+    'telescope_keyword': 'SDSS',
+    'observatory_code': '645',
+    'secpix': (0.396, 0.396),
+    'ext_coeff': 0.05,
+
+    # SDSS fpC products already carry excellent astrometry for this workflow.
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': (1, 1),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'RA',
+    'dec': 'DEC',
+    'radec_separator': 'XXX',
+    'date_keyword': 'DATE-OBS|TAIHMS',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'FILTER',
+    'filter_translations': {'u': 'u', 'g': 'g', 'r': 'r', 'i': 'i',
+                            'z': 'z', 'U': 'u', 'G': 'g', 'R': 'r',
+                            'I': 'i', 'Z': 'z'},
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+
+    # source extractor settings
+    'source_minarea': 5,
+    'source_snr': 3,
+    'aprad_default': 5,
+    'aprad_range': [2, 12],
+    'sex-config-file': rootpath+'/setup/generic.sex',
+    'mask_file': {},
+
+    # registration settings (Scamp); SDSS workflow helpers use keep_wcs=True.
+    'scamp-config-file': rootpath+'/setup/generic.scamp',
+    'reg_max_mag': 21,
+    'reg_search_radius': 0.5,
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,DATE-OBS,'
+                      'TAIHMS,MIDTIMJD,RA,DEC,AIRMASS,RUN,RERUN,CAMCOL,'
+                      'FIELD,TEL_KEYW,ORIGFILE,PPSEQ,SDSSCUT'),
+    'swarp-config-file': rootpath+'/setup/generic.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['SDSS-R9', 'GAIA'],
+    'photometry_catalogs': ['SDSS-R9']
+}
+
+
 # access functions for telescope configurations
 
 
@@ -4945,7 +4999,8 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'LBTLBC',# added LBTLBC 7/8/2021 COC
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
                           'PWFLINPOI', 'CFHTMEGAPRIME',
-                          'CATALINALEM60', 'PANSTARRS1', 'SPACEWATCH09']
+                          'CATALINALEM60', 'PANSTARRS1', 'SPACEWATCH09',
+                          'SDSS']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
@@ -5046,6 +5101,7 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'Spacewatch 0.9-m f/3 prime focus':
                           'SPACEWATCH09',
                           'SPACEWATCH09': 'SPACEWATCH09',
+                          'SDSS': 'SDSS',
                         }
 
 # translate telescope keyword into parameter set defined here
@@ -5125,7 +5181,8 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'PWFLINPOI': pwflinpoi_param,
                         'CATALINALEM60': catalinalem60_param,
                         'PANSTARRS1': panstarrs1_param,
-                        'SPACEWATCH09': spacewatch09_param
+                        'SPACEWATCH09': spacewatch09_param,
+                        'SDSS': sdss_param
 }
 
 

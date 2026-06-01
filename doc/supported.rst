@@ -100,6 +100,9 @@ observatories/instruments:
 +--------------------------+--------------------+----------------+
 | San Pedro Martir 84cm    | Mexman (E2V CCD)   | MEXMAN         |
 +--------------------------+--------------------+----------------+
+| Sloan Digital Sky Survey | imaging camera      | SDSS           |
+| 2.5m                     | (******)           |                |
++--------------------------+--------------------+----------------+
 | Spacewatch 0.9m          | Mosaic Camera      | SPACEWATCH09   |
 |                          | (*****)            |                |
 +--------------------------+--------------------+----------------+
@@ -155,6 +158,16 @@ files under ``PP/<date>/<band>``, writes PP-ready ``spacewatch_*.fits``
 files and CATCH-derived position sidecars, keeps the archive WCS, and
 intentionally lets PP derive photometric zeropoints instead of trusting
 the ambiguous archive ``MAGZP`` header.
+
+(******): SDSS CADC products can be staged with ``pptool_sdss.py``.
+The helper maps confirmed target-containing cutout FITS/PNG filenames
+to their corresponding full-frame ``*_image.fits`` products, copies
+those frames into ``PP/<DATE-OBS>/<filter>``, stamps ``PPINSTRU`` and
+``TEL_KEYW`` as ``SDSS``, keeps the archive WCS with ``keep_wcs=True``,
+and lets PP calibrate against ``SDSS-R9``. PP may write Horizons target
+outputs with parenthesis-derived underscores, so the helper also copies
+those files to the canonical ``photometry_<target>.dat`` name used by
+``pptool_mpcsubmission.py``.
 
 It is recommended to stitch images from cameras with multiple amplifiers
 together using the correct orientations. Furthermore, it is recommended to

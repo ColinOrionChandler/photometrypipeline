@@ -1,0 +1,103 @@
+{
+  "astrometry_catalogs": [
+    "SDSS-R9",
+    "GAIA"
+  ],
+  "combined_photometry_csv": "/Users/colinchandler/GitHub/photometrypipeline/PP/photometry_2003_WW218_combined.csv",
+  "combined_photometry_rows": 4,
+  "keep_wcs": true,
+  "manifest_path": "/Users/colinchandler/GitHub/photometrypipeline/PP/sdss_workflow_manifest.json",
+  "observatory_code": "645",
+  "output_root": "/Users/colinchandler/GitHub/photometrypipeline/PP",
+  "photometry_catalogs": [
+    "SDSS-R9"
+  ],
+  "pp_outputs": [
+    {
+      "filter": "g",
+      "image_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/g",
+      "photometry_file": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/g/photometry_2003_WW218.dat",
+      "working_names": [
+        "2003_WW218_20031221T045026.5776_g_exp54s_SDSS_frame-g-004334-1-0182_image.fits"
+      ]
+    },
+    {
+      "filter": "i",
+      "image_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/i",
+      "photometry_file": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/i/photometry_2003_WW218.dat",
+      "working_names": [
+        "2003_WW218_20031221T044651.63168_i_exp54s_SDSS_frame-i-004334-1-0182_image.fits"
+      ]
+    },
+    {
+      "filter": "r",
+      "image_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/r",
+      "photometry_file": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/r/photometry_2003_WW218.dat",
+      "working_names": [
+        "2003_WW218_20031221T044539.9888_r_exp54s_SDSS_frame-r-004334-1-0182_image.fits"
+      ]
+    },
+    {
+      "filter": "z",
+      "image_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/z",
+      "photometry_file": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/z/photometry_2003_WW218.dat",
+      "working_names": [
+        "2003_WW218_20031221T044914.93472_z_exp54s_SDSS_frame-z-004334-1-0182_image.fits"
+      ]
+    }
+  ],
+  "records": [
+    {
+      "copied": true,
+      "cutout": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/cutouts/2003_WW218_20031221T044539.9888_r_exp54s_CADC_frame-r-004334-1-0182_chip0_126arcsec_cutout.fits",
+      "date_obs": "2003-12-21",
+      "exptime": 53.907456,
+      "filter": "r",
+      "midtimjd": 2452994.698691131,
+      "raw": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/2003_WW218_20031221T044539.9888_r_exp54s_SDSS_frame-r-004334-1-0182_image.fits",
+      "working": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/r/2003_WW218_20031221T044539.9888_r_exp54s_SDSS_frame-r-004334-1-0182_image.fits",
+      "working_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/r",
+      "working_name": "2003_WW218_20031221T044539.9888_r_exp54s_SDSS_frame-r-004334-1-0182_image.fits"
+    },
+    {
+      "copied": true,
+      "cutout": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/cutouts/2003_WW218_20031221T044651.63168_i_exp54s_CADC_frame-i-004334-1-0182_chip0_126arcsec_cutout.fits",
+      "date_obs": "2003-12-21",
+      "exptime": 53.907456,
+      "filter": "i",
+      "midtimjd": 2452994.6995204133,
+      "raw": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/2003_WW218_20031221T044651.63168_i_exp54s_SDSS_frame-i-004334-1-0182_image.fits",
+      "working": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/i/2003_WW218_20031221T044651.63168_i_exp54s_SDSS_frame-i-004334-1-0182_image.fits",
+      "working_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/i",
+      "working_name": "2003_WW218_20031221T044651.63168_i_exp54s_SDSS_frame-i-004334-1-0182_image.fits"
+    },
+    {
+      "copied": true,
+      "cutout": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/cutouts/2003_WW218_20031221T044914.93472_z_exp54s_CADC_frame-z-004334-1-0182_chip0_126arcsec_cutout.fits",
+      "date_obs": "2003-12-21",
+      "exptime": 53.907456,
+      "filter": "z",
+      "midtimjd": 2452994.701179094,
+      "raw": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/2003_WW218_20031221T044914.93472_z_exp54s_SDSS_frame-z-004334-1-0182_image.fits",
+      "working": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/z/2003_WW218_20031221T044914.93472_z_exp54s_SDSS_frame-z-004334-1-0182_image.fits",
+      "working_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/z",
+      "working_name": "2003_WW218_20031221T044914.93472_z_exp54s_SDSS_frame-z-004334-1-0182_image.fits"
+    },
+    {
+      "copied": true,
+      "cutout": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/cutouts/2003_WW218_20031221T045026.5776_g_exp54s_CADC_frame-g-004334-1-0182_chip0_126arcsec_cutout.fits",
+      "date_obs": "2003-12-21",
+      "exptime": 53.907456,
+      "filter": "g",
+      "midtimjd": 2452994.7020084923,
+      "raw": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS/2003_WW218_20031221T045026.5776_g_exp54s_SDSS_frame-g-004334-1-0182_image.fits",
+      "working": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/g/2003_WW218_20031221T045026.5776_g_exp54s_SDSS_frame-g-004334-1-0182_image.fits",
+      "working_dir": "/Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/g",
+      "working_name": "2003_WW218_20031221T045026.5776_g_exp54s_SDSS_frame-g-004334-1-0182_image.fits"
+    }
+  ],
+  "registration": "skipped",
+  "source_dir": "/Users/colinchandler/Dropbox/School/Research/Objects/Lost Centaur/2003_WW218/CADC/SDSS",
+  "target": "2003 WW218",
+  "telescope": "SDSS"
+}

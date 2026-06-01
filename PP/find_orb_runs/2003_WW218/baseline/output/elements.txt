@@ -1,0 +1,28 @@
+Orbital elements:  2003 WW218
+   Perihelion 2004 Oct 16.61033 +/- 30.2 TT = 14:38:52 (JD 2453295.11033)
+Epoch 2003 Dec 29.0 TT = JDT 2453002.5   Ju: 0.6920   Sa: 0.0891
+M 349.34306454 +/- 0.46             (J2000 ecliptic)             Find_Orb
+n   0.03642022 +/- 0.00223          Peri.   23.21000 +/- 3.3
+a   9.01379337 +/- 0.368            Node    74.96426 +/- 0.06
+e   0.3533858 +/- 0.04              Incl.    5.36731 +/- 0.16
+P  27.06209                H 14.12  G  0.15   U  8.7
+q 5.82844672 +/- 0.122    Q 12.1991400 +/- 0.86
+From 9 observations 2003 Nov. 24-Dec. 29; mean residual 0".29
+# State vector (heliocentric equatorial J2000):
+#   +1.574052437849  +5.272694553007  +2.282961463297 AU
+#   -8.015220931354  +0.892137667028  +1.214039994254 mAU/day
+# MOIDs: Me  5.517279 Ve  5.109298 Ea  4.845890 Ma  4.230631
+# MOIDs: Ju  0.691953 Sa  0.089101 Ur  7.151072 Ne 18.051265
+# 1 oppositions
+# Elements written: 31 May 2026 22:56:28 (JD 2461192.455890)
+# Full range of obs: 2003 Nov. 24-Dec. 29 (9 observations)
+# Find_Orb ver: 2026 May 07
+# Perturbers: 00000020 ;  not using JPL DE
+# Tisserand relative to Jupiter: 3.02897
+# Diameter 6159.8 meters (assuming 10% albedo)
+# Score: 0.465428
+#  $Name=2003%20WW218  $Ty=2004  $Tm=10  $Td=16.610333  $MA=349.34306
+#  $ecc=0.3533858  $Eqnx=2000.
+#  $a=9.0137934  $Peri=23.21000  $Node=74.96427  $Incl=5.36732
+#  $EpJD=2453002.500  $q=5.828447  $T=2453295.110333  $H=14.1
+# Sigmas avail: 1

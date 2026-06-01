@@ -1,0 +1,23 @@
+MPC submission sidecar summary
+Target: 2003 WW218
+Packed target: K03WL8W
+Input: /Users/colinchandler/GitHub/photometrypipeline/PP
+Observations: 4
+Observatory code: 645
+Astrometric catalog: SDSS-R9
+Photometric catalog(s): SDSS-R9
+Submitter: C. O. Chandler
+Measurer: C. O. Chandler, J. Murtagh
+Contact: coc123@uw.edu
+Observers: ank
+ADES output: /Users/colinchandler/GitHub/photometrypipeline/PP/mpc_2003_WW218_ADES.psv
+80-column output: /Users/colinchandler/GitHub/photometrypipeline/PP/mpc_2003_WW218_80col.txt
+Summary output: /Users/colinchandler/GitHub/photometrypipeline/PP/mpc_2003_WW218_summary.txt
+ADES-only fields not represented in 80-column: rmsRA, rmsDec, rmsMag, photCat, exp, seeing, remarks, submitter/measurer context
+Source FITS files:
+  /Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/r/2003_WW218_20031221T044539.9888_r_exp54s_SDSS_frame-r-004334-1-0182_image.fits
+  /Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/i/2003_WW218_20031221T044651.63168_i_exp54s_SDSS_frame-i-004334-1-0182_image.fits
+  /Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/z/2003_WW218_20031221T044914.93472_z_exp54s_SDSS_frame-z-004334-1-0182_image.fits
+  /Users/colinchandler/GitHub/photometrypipeline/PP/2003-12-21/g/2003_WW218_20031221T045026.5776_g_exp54s_SDSS_frame-g-004334-1-0182_image.fits
+Warnings:
+  none

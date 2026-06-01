@@ -34,6 +34,14 @@ def write_spacewatch_test_fits(path):
     fits.PrimaryHDU(header=header).writeto(path)
 
 
+def write_sdss_test_fits(path):
+    header = fits.Header()
+    header["TELESCOP"] = "2.5-m SDSS telescope"
+    header["INSTRUME"] = "SDSS imaging camera"
+    header["TEL_KEYW"] = "SDSS"
+    fits.PrimaryHDU(header=header).writeto(path)
+
+
 def test_target_filename_and_packed_designation():
     assert mpcsub.target_to_filename("2016 CJ155") == "2016_CJ155"
     assert (
@@ -124,6 +132,24 @@ def test_spacewatch_submission_context_uses_09m_telescope(tmp_path):
 
     assert "! aperture 0.9" in bundle.ades_text
     assert "TEL 0.9-m f/3 reflector + CCD" in bundle.obs80_text
+
+
+def test_sdss_submission_context_uses_25m_telescope(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT.replace("DECam", "SDSS"))
+    write_sdss_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(target="2016 CJ155",
+                                     observatory_code="645",
+                                     astcat="SDSS-R9",
+                                     photcat="SDSS-R9",
+                                     output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "! aperture 2.5" in bundle.ades_text
+    assert "TEL 2.5-m SDSS telescope + CCD" in bundle.obs80_text
+    assert "COD 645" in bundle.obs80_text
+    assert "NET SDSS-R9" in bundle.obs80_text
 
 
 def test_recursive_submission_skips_rejected_only_photometry_files(tmp_path):

@@ -4,6 +4,16 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-06-01: added SDSS 2.5-m imaging support under ``SDSS`` and the
+  ``pptool_sdss.py`` workflow wrapper. The helper stages confirmed
+  target-containing full frames from CADC cutout names into
+  ``PP/<DATE-OBS>/<filter>``, stamps SDSS provenance headers, keeps the
+  archive WCS, and uses ``SDSS-R9`` for photometric calibration. MPC
+  submission output now reports SDSS observations as
+  ``TEL 2.5-m SDSS telescope + CCD``; the initial 2003 WW218 run
+  produced SDSS-only ADES/80-column outputs plus current-MPC+SDSS
+  Find_Orb comparison artifacts.
+
 * 2026-05-31: added Spacewatch 0.9-m/PDS support under
   ``SPACEWATCH09`` and the ``pptool_spacewatch.py`` workflow wrapper.
   The helper stages full-frame archive FITS products into

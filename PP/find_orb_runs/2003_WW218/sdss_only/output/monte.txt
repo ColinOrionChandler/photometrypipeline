@@ -1,0 +1,19 @@
+Computed from 67 SR orbits
+Planet orbiting: 0
+Sigmas:
+sigma_Tp          383 days
+sigma_e         0.249 
+sigma_q         0.487 AU (7.28e+7 km)
+sigma_Q          4.01 AU (6e+8 km)
+sigma_1/a       0.188 1/AU
+sigma_i            51 deg
+sigma_M            70 deg
+sigma_omega        90 deg
+sigma_Omega        70 deg
+sigma_MOID          0 AU (0 km)
+sigma_H             0 mag
+sigma_n:        0.149
+sigma_a:         2.24 AU (3.35e+8 km)
+sigma_P:         2283 days
+sigma_Py:       6.25 years
+U=11.5

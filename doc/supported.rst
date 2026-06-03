@@ -123,6 +123,9 @@ observatories/instruments:
 +--------------------------+--------------------+----------------+
 | Very Large Telescope     | FORS2              | VLTFORS2       |
 +--------------------------+--------------------+----------------+
+| WHT 4.2m                 | Prime Focus Imaging| WHTPFIP        |
+|                          | Platform (*******) |                |
++--------------------------+--------------------+----------------+
 | WIYN 0.9m                | Half Degree Imager | WIYN09HDI      |
 +--------------------------+--------------------+----------------+
 | ZTF                      | Mosaic (***)       | ZTFMOSAIC      |
@@ -168,6 +171,14 @@ and lets PP calibrate against ``SDSS-R9``. PP may write Horizons target
 outputs with parenthesis-derived underscores, so the helper also copies
 those files to the canonical ``photometry_<target>.dat`` name used by
 ``pptool_mpcsubmission.py``.
+
+(*******): WHT Prime CASU products can be staged with
+``pptool_wht_prime.py``. The helper copies target-containing reduced
+frames into ``PP/<date>/<filter>``, stamps WHT/PFIP provenance headers,
+writes per-group ``positions_<target>.dat`` files, and can run PP with
+``--keep-wcs`` after archive or astrometry.net WCS solutions are already
+present. WHT/PFIP supports ``B``, ``V``, ``R``, and ``I`` filters; legacy
+``unknown`` values are treated as ``R``.
 
 It is recommended to stitch images from cameras with multiple amplifiers
 together using the correct orientations. Furthermore, it is recommended to

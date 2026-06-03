@@ -4,6 +4,14 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-06-03: added WHT Prime Focus Imaging Platform documentation for
+  CASU reduced products under ``WHTPFIP``. The workflow stages
+  target-containing frames into ``PP/<date>/<filter>``, stamps WHT/PFIP
+  headers, writes per-group target position sidecars, and can preserve
+  externally solved WCS with ``--keep-wcs``/``-keep_wcs``. WHT/PFIP now
+  translates ``B``, ``V``, ``R``, and ``I`` filter keywords directly while
+  retaining the legacy ``unknown`` to ``R`` fallback.
+
 * 2026-06-01: added SDSS 2.5-m imaging support under ``SDSS`` and the
   ``pptool_sdss.py`` workflow wrapper. The helper stages confirmed
   target-containing full frames from CADC cutout names into

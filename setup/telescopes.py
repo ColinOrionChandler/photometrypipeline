@@ -4344,7 +4344,8 @@ whtpfip_param = {
     'obsmidtime_jd': 'MIDTIMJD',
     'object': 'OBJECT',
     'filter': 'FILTER',
-    'filter_translations': {'R': 'R', 'unknown': 'R'},
+    'filter_translations': {'B': 'B', 'V': 'V', 'R': 'R', 'I': 'I',
+                            'unknown': 'R'},
     'exptime': 'EXPTIME',
     'airmass': 'AIRMASS',
 

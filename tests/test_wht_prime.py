@@ -65,7 +65,10 @@ def test_wht_telescope_config_is_registered():
     assert obsparam["observatory_code"] == "950"
     assert obsparam["secpix"] == (0.421, 0.421)
     assert obsparam["date_keyword"] == "DATE-OBS"
+    assert obsparam["filter_translations"]["B"] == "B"
+    assert obsparam["filter_translations"]["V"] == "V"
     assert obsparam["filter_translations"]["R"] == "R"
+    assert obsparam["filter_translations"]["I"] == "I"
     assert _pp_conf.instrument_identifiers["PRIME IMAGING"] == "WHTPFIP"
 
 

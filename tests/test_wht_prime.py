@@ -162,6 +162,41 @@ def test_apply_scamp_head_preserves_numeric_wcs_cards(tmp_path):
     assert header["REGCAT"] == "GAIA"
 
 
+def test_write_unified_astrometry_photometry_csv_adds_uncertainties(tmp_path):
+    image_dir = tmp_path / "PP" / "1998-10-15" / "R"
+    image_dir.mkdir(parents=True)
+    photometry = image_dir / "photometry_1998_QJ1.dat"
+    photometry.write_text(
+        "# header\n"
+        " wht19981015_00268029_reduced.ldac 2451102.3480556 "
+        "20.1234 0.0456 313.55107258 -0.92546163 -0.12 0.24 "
+        "0.00 0.00 60.00 30.4717 0.0258 -10.6261 0.0226 "
+        "PANSTARRS_transformed R 0 WHTPFIP APER 1.84 0.0226 "
+        "0.0258 0.0343 0.0176 0.0178 0.0250 0.1003 0.1092 "
+        "0.1483 0.1018 0.1106 0.1503\n")
+    write_wht_reduced(image_dir / "wht19981015_00268029_reduced.fits")
+
+    output_path, rows = wht.write_unified_astrometry_photometry_csv(
+        tmp_path / "PP", "1998 QJ1")
+
+    assert output_path == (
+        tmp_path / "PP" / "astrometry_photometry_1998_QJ1_unified.csv")
+    assert len(rows) == 1
+    assert rows[0]["ra_deg"] == "313.55107258"
+    assert rows[0]["mag_sig"] == "0.0456"
+    assert rows[0]["ra_ast_sig"] == "0.1003"
+    assert rows[0]["dec_ast_sig"] == "0.1092"
+    assert rows[0]["ra_tot_sig"] == "0.1018"
+    assert rows[0]["source_photometry_file"] == str(photometry.resolve())
+    assert rows[0]["source_fits_file"] == str(
+        (image_dir / "wht19981015_00268029_reduced.fits").resolve())
+
+    header = output_path.read_text().splitlines()[0]
+    assert "ra_ast_sig" in header
+    assert "dec_tot_sig" in header
+    assert "source_fits_file" in header
+
+
 def test_remake_cutouts_from_manifest_preserves_existing_name(tmp_path):
     source_dir = tmp_path / "PP_local_astrometry" / "1998-10-15" / "R"
     source_dir.mkdir(parents=True)

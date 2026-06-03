@@ -797,6 +797,16 @@ def write_combined_photometry_csv(output_root, target, output_path=None):
     return output_path, rows
 
 
+def write_unified_astrometry_photometry_csv(output_root, target,
+                                            output_path=None):
+    output_root = Path(output_root).expanduser().resolve()
+    if output_path is None:
+        output_path = output_root / (
+            "astrometry_photometry_%s_unified.csv" %
+            target_to_filename(target))
+    return write_combined_photometry_csv(output_root, target, output_path)
+
+
 def write_manifest(output_root, manifest):
     output_root = Path(output_root).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -840,11 +850,16 @@ def run_workflow(wht_dir, output_root, target, cutouts=None,
         try:
             combined_path, rows = write_combined_photometry_csv(
                 output_root, target)
+            unified_path, unified_rows = (
+                write_unified_astrometry_photometry_csv(output_root, target))
         except SubmissionError as exc:
             manifest["combined_photometry_error"] = str(exc)
+            manifest["unified_astrometry_photometry_error"] = str(exc)
         else:
             manifest["combined_photometry_csv"] = str(combined_path)
             manifest["combined_photometry_rows"] = len(rows)
+            manifest["unified_astrometry_photometry_csv"] = str(unified_path)
+            manifest["unified_astrometry_photometry_rows"] = len(unified_rows)
         manifest_path = write_manifest(output_root, manifest)
         manifest["manifest_path"] = str(manifest_path)
     return manifest
@@ -909,6 +924,12 @@ def main(argv=None):
         "combined_photometry_rows": manifest.get("combined_photometry_rows"),
         "combined_photometry_error": manifest.get(
             "combined_photometry_error"),
+        "unified_astrometry_photometry_csv": manifest.get(
+            "unified_astrometry_photometry_csv"),
+        "unified_astrometry_photometry_rows": manifest.get(
+            "unified_astrometry_photometry_rows"),
+        "unified_astrometry_photometry_error": manifest.get(
+            "unified_astrometry_photometry_error"),
         "applied_head_files": manifest.get("applied_head_files"),
     }, indent=2, sort_keys=True))
 

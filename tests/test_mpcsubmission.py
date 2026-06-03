@@ -42,6 +42,14 @@ def write_sdss_test_fits(path):
     fits.PrimaryHDU(header=header).writeto(path)
 
 
+def write_wht_test_fits(path):
+    header = fits.Header()
+    header["TELESCOP"] = "4.2-m William Herschel Telescope"
+    header["INSTRUME"] = "WHT Prime Focus Imaging Platform"
+    header["TEL_KEYW"] = "WHTPFIP"
+    fits.PrimaryHDU(header=header).writeto(path)
+
+
 def test_target_filename_and_packed_designation():
     assert mpcsub.target_to_filename("2016 CJ155") == "2016_CJ155"
     assert (
@@ -150,6 +158,21 @@ def test_sdss_submission_context_uses_25m_telescope(tmp_path):
     assert "TEL 2.5-m SDSS telescope + CCD" in bundle.obs80_text
     assert "COD 645" in bundle.obs80_text
     assert "NET SDSS-R9" in bundle.obs80_text
+
+
+def test_wht_submission_context_uses_42m_telescope(tmp_path):
+    photometry = tmp_path / "photometry_1998_QJ1.dat"
+    photometry.write_text(PHOTOMETRY_TEXT.replace("2016_CJ155", "1998_QJ1"))
+    write_wht_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(target="1998 QJ1",
+                                     observatory_code="950",
+                                     output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "! aperture 4.2" in bundle.ades_text
+    assert "TEL 4.2-m William Herschel Telescope + CCD" in bundle.obs80_text
+    assert "COD 950" in bundle.obs80_text
 
 
 def test_recursive_submission_skips_rejected_only_photometry_files(tmp_path):

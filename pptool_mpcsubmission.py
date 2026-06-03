@@ -471,6 +471,9 @@ def derive_telescope_context(observations: list[PhotometryObservation]) -> tuple
         return "4.0-m reflector", "4.0", "CCD"
     if "SDSS" in telescope_keywords:
         return "2.5-m SDSS telescope", "2.5", "CCD"
+    if "WHTPFIP" in telescope_keywords or any(
+            "William Herschel" in telescope for telescope in telescopes):
+        return "4.2-m William Herschel Telescope", "4.2", "CCD"
     if "SPACEWATCH09" in telescope_keywords or any(
             "Spacewatch 0.9-m" in telescope for telescope in telescopes):
         return "0.9-m f/3 reflector", "0.9", "CCD"

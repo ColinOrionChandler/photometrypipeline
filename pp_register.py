@@ -353,7 +353,7 @@ def register(filenames, telescope, sex_snr, source_minarea, aprad,
             if key.find('END') > -1:
                 break
             # print key, '|',  value, '|',  comment
-            hdu[0].header[key] = (str(value), comment)
+            hdu[0].header[key] = (value, comment)
 
         # other header keywords
         hdu[0].header['RADECSYS'] = (hdu[0].header['RADESYS'],

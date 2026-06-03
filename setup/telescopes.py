@@ -4322,6 +4322,57 @@ intwfc_param = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
 }
 
+whtpfip_param = {
+    'telescope_instrument': 'WHT/PFIP',  # telescope/instrument name
+    'telescope_keyword': 'WHTPFIP',      # telescope/instrument keyword
+    'observatory_code': '950',           # Roque de los Muchachos
+    'secpix': (0.421, 0.421),            # arcsec/pixel, WHT Prime data
+    'ext_coeff': 0.05,
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('CCDXBIN', 'CCDYBIN'),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'RA',
+    'dec': 'DEC',
+    'radec_separator': ':',
+    'date_keyword': 'DATE-OBS',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'FILTER',
+    'filter_translations': {'R': 'R', 'unknown': 'R'},
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+
+    # source extractor settings
+    'source_minarea': 10,
+    'source_snr': 3,
+    'aprad_default': 5,
+    'aprad_range': [2, 12],
+    'sex-config-file': rootpath+'/setup/generic.sex',
+    'mask_file': {},
+
+    # registration settings (Scamp)
+    'scamp-config-file': rootpath+'/setup/generic.scamp',
+    'reg_max_mag': 20,
+    'reg_search_radius': 0.5,
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,RA,DEC,AIRMASS,TEL_KEYW,CCDXBIN,' +
+                      'CCDYBIN,MIDTIMJD,ORIGFILE,PPSEQ'),
+    'swarp-config-file': rootpath+'/setup/generic.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+}
+
 # NOT, ALFOSC
 notalfosc_param = {
     'telescope_instrument': 'NOT/ALFOSC',  # telescope/instrument name
@@ -5000,7 +5051,7 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
                           'PWFLINPOI', 'CFHTMEGAPRIME',
                           'CATALINALEM60', 'PANSTARRS1', 'SPACEWATCH09',
-                          'SDSS']
+                          'SDSS', 'WHTPFIP']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
@@ -5102,6 +5153,9 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'SPACEWATCH09',
                           'SPACEWATCH09': 'SPACEWATCH09',
                           'SDSS': 'SDSS',
+                          'WHT': 'WHTPFIP',
+                          'PRIME IMAGING': 'WHTPFIP',
+                          'WHTPFIP': 'WHTPFIP',
                         }
 
 # translate telescope keyword into parameter set defined here
@@ -5182,7 +5236,8 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'CATALINALEM60': catalinalem60_param,
                         'PANSTARRS1': panstarrs1_param,
                         'SPACEWATCH09': spacewatch09_param,
-                        'SDSS': sdss_param
+                        'SDSS': sdss_param,
+                        'WHTPFIP': whtpfip_param
 }
 
 

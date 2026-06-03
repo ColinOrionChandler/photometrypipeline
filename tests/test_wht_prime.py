@@ -160,3 +160,79 @@ def test_apply_scamp_head_preserves_numeric_wcs_cards(tmp_path):
     assert header["PV1_0"] == 0.0
     assert "A_ORDER" not in header
     assert header["REGCAT"] == "GAIA"
+
+
+def test_remake_cutouts_from_manifest_preserves_existing_name(tmp_path):
+    source_dir = tmp_path / "PP_local_astrometry" / "1998-10-15" / "R"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "wht19981015_00268029_reduced.fits"
+
+    header = fits.Header()
+    header["DATE-OBS"] = "1998-10-15T20:20:42.000"
+    header["EXPTIME"] = 60.0
+    header["FILTER"] = "R"
+    header["CTYPE1"] = "RA---TAN"
+    header["CTYPE2"] = "DEC--TAN"
+    header["CRPIX1"] = 21.0
+    header["CRPIX2"] = 21.0
+    header["CRVAL1"] = 313.55111
+    header["CRVAL2"] = -0.92540
+    header["CD1_1"] = -1.0 / 3600.0
+    header["CD1_2"] = 0.0
+    header["CD2_1"] = 0.0
+    header["CD2_2"] = 1.0 / 3600.0
+    fits.PrimaryHDU(data=np.arange(41 * 41, dtype=np.float32).reshape(41, 41),
+                    header=header).writeto(source)
+
+    cutouts_dir = tmp_path / "cutouts"
+    cutouts_dir.mkdir()
+    (tmp_path / "cutouts.jsonl").write_text(json.dumps({
+        "kind": "target",
+        "source_filename": "wht19981015_00268029.fits.fz",
+        "output_path": "cutouts/existing_name.fits",
+    }) + "\n")
+
+    manifest = {
+        "target": "1998 QJ1",
+        "records": [{
+            "date_obs": "1998-10-15T20:20:42.000",
+            "eph": {
+                "ra_deg": 313.55111,
+                "dec_deg": -0.92540,
+                "v_mag": 20.4,
+            },
+            "exptime": 60.0,
+            "filter": "R",
+            "midtime_jd": 2451102.3480555555,
+            "working": str(source),
+            "working_dir": str(source_dir),
+            "working_name": source.name,
+        }],
+    }
+    manifest_path = tmp_path / "wht_local_astrometry_manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    result = wht.remake_cutouts_from_manifest(
+        tmp_path, manifest_path, size_arcsec=10.0)
+
+    output_fits = cutouts_dir / "existing_name.fits"
+    output_png = output_fits.with_suffix(".png")
+    assert result["n_records"] == 1
+    assert result["n_inside"] == 1
+    assert output_fits.exists()
+    assert output_png.exists()
+
+    with fits.open(output_fits) as hdulist:
+        header = hdulist[0].header
+        assert hdulist[0].data.shape == (11, 11)
+        assert header["CUTSRC"] == source.name
+        assert header["CUTIN"]
+        assert np.isclose(header["CUTRA"], 313.55111)
+
+    rows = [
+        json.loads(line) for line in
+        (tmp_path / "cutouts.jsonl").read_text().splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["output_path"] == "cutouts/existing_name.fits"
+    assert rows[0]["filter_name"] == "R"

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,9 +15,16 @@ import shutil
 import sys
 from contextlib import contextmanager
 
+import numpy as np
 from astropy import units as u
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.nddata import Cutout2D
+from astropy.nddata.utils import NoOverlapError
 from astropy.time import Time
+from astropy.visualization import ZScaleInterval
+from astropy.wcs import WCS
+from PIL import Image
 
 from pptool_mpcsubmission import (
     PHOTOMETRY_COLUMNS,
@@ -31,6 +39,8 @@ TELESCOPE_KEY = "WHTPFIP"
 MANIFEST_NAME = "wht_prime_workflow_manifest.json"
 TARGET_TRANSLATION = str.maketrans(" /()", "____")
 SOURCE_RE = re.compile(r"wht(?P<date>\d{8})_(?P<recno>\d+)\.fits")
+WORKING_RE = re.compile(r"wht(?P<date>\d{8})_(?P<recno>\d+)_reduced\.fits")
+DEFAULT_CUTOUT_SIZE_ARCSEC = 126.0
 SCAMP_WCS_KEYS = {
     "EQUINOX",
     "RADESYS",
@@ -291,6 +301,317 @@ def apply_scamp_head_file(fits_path, head_path=None, refcat="GAIA"):
     return fits_path
 
 
+def load_existing_cutout_rows(wht_dir):
+    path = Path(wht_dir).expanduser().resolve() / "cutouts.jsonl"
+    if not path.exists():
+        return []
+    return load_cutout_rows(wht_dir)
+
+
+def _working_name_from_cutout_row(row):
+    source = row.get("source_filename") or row.get("input_path") or ""
+    match = re.search(r"wht(?P<date>\d{8})_(?P<recno>\d+)", source)
+    if match:
+        return "wht%s_%s_reduced.fits" % (
+            match.group("date"), match.group("recno"))
+    return None
+
+
+def _existing_cutout_paths(wht_dir):
+    paths = {}
+    for row in load_existing_cutout_rows(wht_dir):
+        if row.get("kind") != "target" or not row.get("output_path"):
+            continue
+        working_name = _working_name_from_cutout_row(row)
+        if working_name:
+            paths[working_name] = row["output_path"]
+    return paths
+
+
+def _record_target_position(record):
+    if "target_position" in record:
+        position = record["target_position"]
+        return float(position["ra_deg"]), float(position["dec_deg"])
+    if "eph" in record:
+        eph = record["eph"]
+        return float(eph["ra_deg"]), float(eph["dec_deg"])
+    raise KeyError("manifest record lacks target_position or eph")
+
+
+def _record_start_time(record):
+    value = record.get("date_obs") or record.get("obs_time")
+    if value is not None:
+        return Time(value, format="isot", scale="utc")
+    if "midtimjd" in record:
+        return Time(float(record["midtimjd"]), format="jd", scale="utc")
+    if "midtime_jd" in record:
+        exptime = float(record.get("exptime") or 0.0)
+        return (Time(float(record["midtime_jd"]), format="jd", scale="utc") -
+                (exptime / 2.0) * u.second)
+    raise KeyError("manifest record lacks date_obs or midtime")
+
+
+def _record_midtime(record):
+    if "midtime_jd" in record:
+        return Time(float(record["midtime_jd"]), format="jd", scale="utc")
+    if "midtimjd" in record:
+        return Time(float(record["midtimjd"]), format="jd", scale="utc")
+    start = _record_start_time(record)
+    exptime = float(record.get("exptime") or 0.0)
+    return start + (exptime / 2.0) * u.second
+
+
+def _source_filename_from_record(record):
+    working_name = Path(record["working_name"]).name
+    return working_name.replace("_reduced.fits", ".fits.fz")
+
+
+def _casu_label_from_record(record):
+    match = WORKING_RE.fullmatch(Path(record["working_name"]).name)
+    if match:
+        return "wht%s.fits" % match.group("recno")
+    return Path(record["working_name"]).name.replace("_reduced.fits", ".fits")
+
+
+def _timestamp_token(time):
+    return time.utc.isot.replace("-", "").replace(":", "").split(".", 1)[0]
+
+
+def _exptime_token(exptime):
+    exptime = float(exptime)
+    if exptime.is_integer():
+        return "%ds" % int(exptime)
+    return ("%ss" % ("%.3f" % exptime).rstrip("0").rstrip("."))
+
+
+def _cutout_hash(record, ra_deg, dec_deg, size_arcsec):
+    text = "|".join([
+        Path(record["working_name"]).name,
+        "%.8f" % float(record.get("midtime_jd") or
+                       record.get("midtimjd") or 0),
+        "%.8f" % ra_deg,
+        "%.8f" % dec_deg,
+        "%.3f" % size_arcsec,
+    ])
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+
+
+def cutout_output_path(record, target, existing_paths, size_arcsec):
+    working_name = Path(record["working_name"]).name
+    if working_name in existing_paths:
+        return existing_paths[working_name]
+
+    ra_deg, dec_deg = _record_target_position(record)
+    start = _record_start_time(record)
+    target_token = target_to_filename(target)
+    filter_token = str(record.get("filter") or "unknown")
+    exptime = _exptime_token(record.get("exptime") or 0.0)
+    hash_token = _cutout_hash(record, ra_deg, dec_deg, size_arcsec)
+    if float(size_arcsec).is_integer():
+        size_token = "%darcsec" % int(size_arcsec)
+    else:
+        size_token = "%garcsec" % size_arcsec
+    filename = ("%s_%s_%s_exp%s_CASU_%s_%s_chip0_%s_cutout.fits" %
+                (target_token, _timestamp_token(start), filter_token,
+                 exptime, _casu_label_from_record(record), hash_token,
+                 size_token))
+    return str(Path("cutouts") / filename)
+
+
+def _pixel_scale_arcsec(wcs):
+    matrix = wcs.pixel_scale_matrix
+    xscale = np.hypot(matrix[0, 0], matrix[1, 0]) * 3600.0
+    yscale = np.hypot(matrix[0, 1], matrix[1, 1]) * 3600.0
+    return float(np.mean([abs(xscale), abs(yscale)]))
+
+
+def _cutout_size_pixels(wcs, size_arcsec):
+    pixels = int(round(float(size_arcsec) / _pixel_scale_arcsec(wcs)))
+    if pixels % 2 == 0:
+        pixels += 1
+    return max(pixels, 1)
+
+
+def _centered_blank_wcs(source_wcs, target, size_px):
+    header = source_wcs.to_header(relax=True)
+    cd = getattr(source_wcs.wcs, "cd", None)
+    wcs = WCS(header, relax=True)
+    wcs.wcs.crpix = [size_px // 2 + 1, size_px // 2 + 1]
+    wcs.wcs.crval = [target.ra.deg, target.dec.deg]
+    if cd is not None and np.asarray(cd).shape == (2, 2):
+        wcs.wcs.cd = cd
+    else:
+        pc = getattr(source_wcs.wcs, "pc", None)
+        if pc is not None and np.asarray(pc).shape == (2, 2):
+            wcs.wcs.pc = pc
+            wcs.wcs.cdelt = source_wcs.wcs.cdelt
+    return wcs
+
+
+def _zscale_rgba(data):
+    finite = np.isfinite(data)
+    if not finite.any():
+        scaled = np.zeros(data.shape, dtype=np.uint8)
+    else:
+        values = data[finite]
+        try:
+            vmin, vmax = ZScaleInterval().get_limits(values)
+        except Exception:
+            vmin, vmax = np.nanpercentile(values, [1, 99])
+        if (not np.isfinite(vmin) or not np.isfinite(vmax) or
+                vmax <= vmin):
+            vmin, vmax = np.nanmin(values), np.nanmax(values)
+        if vmax <= vmin:
+            scaled = np.zeros(data.shape, dtype=np.uint8)
+        else:
+            norm = np.clip((data - vmin) / (vmax - vmin), 0, 1)
+            norm[~finite] = 0
+            scaled = (norm * 255).astype(np.uint8)
+
+    alpha = np.full(scaled.shape, 255, dtype=np.uint8)
+    return Image.fromarray(np.dstack([scaled, scaled, scaled, alpha]))
+
+
+def _relative_to_root(path, root):
+    path = Path(path).expanduser()
+    root = Path(root).expanduser().resolve()
+    try:
+        return path.resolve().relative_to(root)
+    except ValueError:
+        return Path(os.path.relpath(str(path), str(root)))
+
+
+def _build_cutout(record, size_arcsec):
+    ra_deg, dec_deg = _record_target_position(record)
+    target = SkyCoord(ra_deg * u.deg, dec_deg * u.deg, frame="icrs")
+    with fits.open(record["working"], memmap=False,
+                   ignore_missing_end=True) as hdulist:
+        header = hdulist[0].header.copy()
+        data = np.asarray(hdulist[0].data, dtype=np.float32)
+        source_wcs = WCS(header, relax=True)
+
+    x, y = source_wcs.world_to_pixel(target)
+    size_px = _cutout_size_pixels(source_wcs, size_arcsec)
+    try:
+        cutout = Cutout2D(
+            data, position=(x, y), size=(size_px, size_px),
+            wcs=source_wcs, mode="partial", fill_value=np.nan, copy=True)
+        cutout_data = cutout.data.astype(np.float32)
+        cutout_wcs = cutout.wcs
+        overlap = bool(np.isfinite(cutout_data).any())
+    except NoOverlapError:
+        cutout_data = np.full((size_px, size_px), np.nan, dtype=np.float32)
+        cutout_wcs = _centered_blank_wcs(source_wcs, target, size_px)
+        overlap = False
+
+    inside = (0 <= float(x) < data.shape[1] and 0 <= float(y) < data.shape[0])
+    return cutout_data, cutout_wcs, {
+        "x": float(x),
+        "y": float(y),
+        "inside": bool(inside),
+        "overlap": overlap,
+        "size_px": int(size_px),
+        "ra_deg": ra_deg,
+        "dec_deg": dec_deg,
+    }, header
+
+
+def remake_cutouts_from_manifest(wht_dir, manifest_path, cutout_dir=None,
+                                 size_arcsec=DEFAULT_CUTOUT_SIZE_ARCSEC,
+                                 write_jsonl=True):
+    wht_dir = Path(wht_dir).expanduser().resolve()
+    manifest_path = Path(manifest_path).expanduser().resolve()
+    cutout_dir = (wht_dir / "cutouts" if cutout_dir is None
+                  else Path(cutout_dir).expanduser().resolve())
+    cutout_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = json.loads(manifest_path.read_text())
+    target = manifest.get("target", "target")
+    records = sorted(manifest["records"], key=lambda record: (
+        _record_start_time(record).jd, Path(record["working_name"]).name))
+    existing_paths = _existing_cutout_paths(wht_dir)
+    rows, products = [], []
+
+    for record in records:
+        output_rel = cutout_output_path(record, target, existing_paths,
+                                        size_arcsec)
+        output_fits = cutout_dir / Path(output_rel).name
+        output_png = output_fits.with_suffix(".png")
+        output_fits.parent.mkdir(parents=True, exist_ok=True)
+
+        data, cutout_wcs, cutout_info, source_header = _build_cutout(
+            record, size_arcsec)
+        header = source_header.copy()
+        header.update(cutout_wcs.to_header(relax=True))
+        header["CUTSRC"] = (Path(record["working"]).name,
+                            "fixed-WCS source image")
+        header["CUTSIZE"] = (float(size_arcsec), "cutout size arcsec")
+        header["CUTRA"] = (cutout_info["ra_deg"], "target RA deg")
+        header["CUTDEC"] = (cutout_info["dec_deg"], "target Dec deg")
+        header["CUTIN"] = (cutout_info["inside"], "target inside source")
+        header["CUTOVER"] = (cutout_info["overlap"], "cutout overlaps source")
+        header["HISTORY"] = "Regenerated from fixed WCS manifest."
+        fits.PrimaryHDU(data=data, header=header).writeto(
+            output_fits, overwrite=True, output_verify="silentfix")
+        _zscale_rgba(data).save(output_png)
+
+        start = _record_start_time(record)
+        mid = _record_midtime(record)
+        row = {
+            "dec_deg": cutout_info["dec_deg"],
+            "exposure": float(record.get("exptime") or 0.0),
+            "filter_name": record.get("filter") or "unknown",
+            "hdu_index": 0,
+            "input_path": str(_relative_to_root(record["working"], wht_dir)),
+            "inside": cutout_info["inside"],
+            "kind": "target",
+            "metadata": {
+                "datetime_jd": float(mid.jd),
+                "datetime_str": mid.utc.iso,
+                "filter": record.get("filter"),
+                "source_working": record["working"],
+                "targetname": "(%s)" % target,
+                "v_mag": record.get("eph", {}).get("v_mag"),
+            },
+            "mjd": float(start.mjd),
+            "naxis1": int(data.shape[1]),
+            "naxis2": int(data.shape[0]),
+            "object_name": target,
+            "obs_time": start.utc.isot,
+            "output_path": str(_relative_to_root(output_fits, wht_dir)),
+            "ra_deg": cutout_info["ra_deg"],
+            "size_arcsec": float(size_arcsec),
+            "source_filename": _source_filename_from_record(record),
+            "targetname": "(%s)" % target,
+            "verified": cutout_info["overlap"],
+            "x": cutout_info["x"],
+            "y": cutout_info["y"],
+        }
+        rows.append(row)
+        products.append({
+            "fits": str(output_fits),
+            "png": str(output_png),
+            "inside": cutout_info["inside"],
+            "overlap": cutout_info["overlap"],
+        })
+
+    if write_jsonl:
+        with (wht_dir / "cutouts.jsonl").open("w") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+    return {
+        "cutout_dir": str(cutout_dir),
+        "manifest_path": str(manifest_path),
+        "n_records": len(records),
+        "n_fits": len(products),
+        "n_png": len(products),
+        "n_inside": sum(1 for product in products if product["inside"]),
+        "n_overlap": sum(1 for product in products if product["overlap"]),
+        "products": products,
+    }
+
+
 def prepare_pp_tree(wht_dir, output_root, target, cutouts=None,
                     overwrite=False):
     wht_dir = Path(wht_dir).expanduser().resolve()
@@ -548,12 +869,28 @@ def main(argv=None):
                         help="skip PP registration and use existing WCS")
     parser.add_argument("--apply-heads", action="store_true",
                         help="apply existing SCAMP .head WCS files first")
+    parser.add_argument("--remake-cutouts-from-manifest",
+                        help=("regenerate target FITS/PNG cutouts from an "
+                              "existing fixed-WCS manifest and exit"))
+    parser.add_argument("--cutout-dir",
+                        help="cutout output directory; defaults to cutouts/")
+    parser.add_argument("--cutout-size-arcsec", type=float,
+                        default=DEFAULT_CUTOUT_SIZE_ARCSEC,
+                        help="regenerated cutout size in arcsec")
     parser.add_argument("--fixed-aprad", type=float, default=0.0,
                         help="fixed PP aperture radius; 0 uses curve of growth")
     parser.add_argument("--reject", default="pos",
                         help="PP target rejection schema, e.g. pos or none")
 
     args = parser.parse_args(argv)
+    if args.remake_cutouts_from_manifest:
+        result = remake_cutouts_from_manifest(
+            args.wht_dir, args.remake_cutouts_from_manifest,
+            cutout_dir=args.cutout_dir,
+            size_arcsec=args.cutout_size_arcsec)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
     output_root = (Path(args.wht_dir).expanduser().resolve() / "PP"
                    if args.output_root is None else args.output_root)
     manifest = run_workflow(

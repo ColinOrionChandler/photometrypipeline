@@ -175,6 +175,9 @@ def test_write_unified_astrometry_photometry_csv_adds_uncertainties(tmp_path):
         "0.0258 0.0343 0.0176 0.0178 0.0250 0.1003 0.1092 "
         "0.1483 0.1018 0.1106 0.1503\n")
     write_wht_reduced(image_dir / "wht19981015_00268029_reduced.fits")
+    (tmp_path / "PP" / "mpc_submission_counts.json").write_text(json.dumps({
+        "excluded_source_files": ["wht19981015_00268029_reduced.fits"],
+    }))
 
     output_path, rows = wht.write_unified_astrometry_photometry_csv(
         tmp_path / "PP", "1998 QJ1")
@@ -187,6 +190,7 @@ def test_write_unified_astrometry_photometry_csv_adds_uncertainties(tmp_path):
     assert rows[0]["ra_ast_sig"] == "0.1003"
     assert rows[0]["dec_ast_sig"] == "0.1092"
     assert rows[0]["ra_tot_sig"] == "0.1018"
+    assert rows[0]["in_mpc"] == "true"
     assert rows[0]["source_photometry_file"] == str(photometry.resolve())
     assert rows[0]["source_fits_file"] == str(
         (image_dir / "wht19981015_00268029_reduced.fits").resolve())
@@ -194,6 +198,7 @@ def test_write_unified_astrometry_photometry_csv_adds_uncertainties(tmp_path):
     header = output_path.read_text().splitlines()[0]
     assert "ra_ast_sig" in header
     assert "dec_tot_sig" in header
+    assert "in_mpc" in header
     assert "source_fits_file" in header
 
 

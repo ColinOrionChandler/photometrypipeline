@@ -766,6 +766,30 @@ def discover_target_photometry_files(output_root, target):
     return sorted(set(paths))
 
 
+def load_in_mpc_source_names(output_root):
+    counts_path = Path(output_root).expanduser().resolve()
+    counts_path = counts_path / "mpc_submission_counts.json"
+    if not counts_path.exists():
+        return set()
+
+    counts = json.loads(counts_path.read_text())
+    return {
+        Path(source).name
+        for source in counts.get("excluded_source_files", [])
+    }
+
+
+def source_is_in_mpc(row, source_fits, in_mpc_sources):
+    catalog_token = row["catalog_token"]
+    candidates = {
+        Path(source_fits).name,
+        Path(catalog_token).name,
+        Path(catalog_token + ".fits").name,
+        Path(catalog_token.replace(".ldac", ".fits")).name,
+    }
+    return bool(candidates & in_mpc_sources)
+
+
 def write_combined_photometry_csv(output_root, target, output_path=None):
     output_root = Path(output_root).expanduser().resolve()
     if output_path is None:
@@ -774,6 +798,7 @@ def write_combined_photometry_csv(output_root, target, output_path=None):
     else:
         output_path = Path(output_path).expanduser().resolve()
 
+    in_mpc_sources = load_in_mpc_source_names(output_root)
     rows = []
     for photometry_file in discover_target_photometry_files(output_root,
                                                             target):
@@ -781,11 +806,14 @@ def write_combined_photometry_csv(output_root, target, output_path=None):
             source_fits = resolve_fits_filename(photometry_file,
                                                 row["catalog_token"])
             combined = dict(row)
+            combined["in_mpc"] = str(source_is_in_mpc(
+                row, source_fits, in_mpc_sources)).lower()
             combined["source_photometry_file"] = str(photometry_file)
             combined["source_fits_file"] = str(source_fits)
             rows.append(combined)
 
     fieldnames = list(PHOTOMETRY_COLUMNS) + [
+        "in_mpc",
         "source_photometry_file",
         "source_fits_file",
     ]

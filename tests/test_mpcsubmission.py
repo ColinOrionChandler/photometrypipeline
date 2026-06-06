@@ -50,6 +50,26 @@ def write_wht_test_fits(path):
     fits.PrimaryHDU(header=header).writeto(path)
 
 
+def synthetic_obs80_line(tmp_path, *, observatory_code, non_survey_measurer):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        observatory_code=observatory_code,
+        non_survey_measurer=non_survey_measurer,
+        output_dir=tmp_path,
+    )
+    bundle = mpcsub.build_submission(tmp_path, config)
+    obs_lines = [
+        line for line in bundle.obs80_text.splitlines()
+        if line.startswith("     K16CF5J")
+    ]
+    assert len(obs_lines) == 1
+    return obs_lines[0]
+
+
 def test_target_filename_and_packed_designation():
     assert mpcsub.target_to_filename("2016 CJ155") == "2016_CJ155"
     assert (
@@ -86,6 +106,43 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert len(obs_lines) == 1
     assert len(obs_lines[0]) == 80
     assert obs_lines[0].endswith("W84")
+
+
+def test_f51_non_survey_sets_obsnote_z_in_column_72(tmp_path):
+    line = synthetic_obs80_line(
+        tmp_path,
+        observatory_code="F51",
+        non_survey_measurer=True,
+    )
+
+    assert len(line) == 80
+    assert line[70] == "r"
+    assert line[71] == "Z"
+    assert line[77:80] == "F51"
+
+
+def test_f51_survey_leaves_obsnote_blank(tmp_path):
+    line = synthetic_obs80_line(
+        tmp_path,
+        observatory_code="F51",
+        non_survey_measurer=False,
+    )
+
+    assert len(line) == 80
+    assert line[71] == " "
+    assert line[77:80] == "F51"
+
+
+def test_non_special_site_leaves_non_survey_obsnote_blank(tmp_path):
+    line = synthetic_obs80_line(
+        tmp_path,
+        observatory_code="W84",
+        non_survey_measurer=True,
+    )
+
+    assert len(line) == 80
+    assert line[71] == " "
+    assert line[77:80] == "W84"
 
 
 def test_observer_names_use_initials_for_first_last_names(tmp_path):

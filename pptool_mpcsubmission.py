@@ -24,6 +24,8 @@ DEFAULT_MEASURER = "C. O. Chandler, J. Murtagh"
 DEFAULT_OBSERVATORY_CODE = "W84"
 DEFAULT_ACK_SUFFIX = "Small-body Search and Rescue"
 DEFAULT_SUBMITTER = "C. O. Chandler"
+NON_SURVEY_OBSNOTE = "Z"
+NON_SURVEY_OBSNOTE_CODES = {"F51", "F52", "G96", "I41", "703"}
 
 PHOTOMETRY_COLUMNS = (
     "catalog_token",
@@ -122,6 +124,7 @@ class SubmissionConfig:
     contact: str = DEFAULT_CONTACT
     observers: list[str] | None = None
     prog: str | None = None
+    non_survey_measurer: bool = False
     output_dir: Path | None = None
     strict: bool = False
 
@@ -415,6 +418,15 @@ def _format_80col_date(time: Time) -> str:
     return "%04d %02d %08.5f " % (dt.year, dt.month, day_fraction)
 
 
+def obs80_observation_note(config: SubmissionConfig) -> str:
+    """Return the MPC1992 column-72 observation note for this submission."""
+
+    site_code = config.observatory_code.upper()
+    if config.non_survey_measurer and site_code in NON_SURVEY_OBSNOTE_CODES:
+        return NON_SURVEY_OBSNOTE
+    return " "
+
+
 def _psv_value(value: object) -> str:
     if value is None:
         return ""
@@ -652,6 +664,7 @@ def format_80col_observation(obs: PhotometryObservation,
     date = _format_80col_date(obs.obs_time)
     band = (obs.band or "C")[:1]
     program_code = config.prog if config.prog and len(config.prog) == 1 else " "
+    observation_note = obs80_observation_note(config)
 
     line = (
         "%5s%-7s  C" % ("", packed_target) +
@@ -660,7 +673,8 @@ def format_80col_observation(obs: PhotometryObservation,
         "%s" % dec +
         "         " +
         "%5.1f %1s" % (obs.mag, band) +
-        "%5s%s%3s" % ("", program_code, config.observatory_code)
+        "%s%4s%s%3s" %
+        (observation_note, "", program_code, config.observatory_code)
     )
     if len(line) != 80:
         raise SubmissionError("internal 80-column formatter produced %d "
@@ -758,6 +772,8 @@ def format_summary(input_path: Path,
         "Measurer: %s" % ", ".join(measurers),
         "Contact: %s" % config.contact,
         "Observers: %s" % (", ".join(observers) if observers else "(none)"),
+        "Non-survey measurer/pipeline astrometry: %s" %
+        ("yes" if config.non_survey_measurer else "no"),
         "ADES output: %s" % ades_path,
         "80-column output: %s" % obs80_path,
         "Summary output: %s" % summary_path,
@@ -827,6 +843,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="override photometric catalog for all rows")
     parser.add_argument("--prog", help="ADES program code; one character is "
                         "also placed in 80-column output")
+    parser.add_argument("--non-survey", "--non-survey-measurer",
+                        dest="non_survey_measurer", action="store_true",
+                        help="set MPC1992 observation note Z in column 72 for "
+                        "non-survey measurer/pipeline astrometry from F51, "
+                        "F52, G96, I41, or 703")
     parser.add_argument("--output-dir", type=Path,
                         help="directory for all generated files")
     parser.add_argument("--strict", action="store_true",
@@ -848,6 +869,7 @@ def main(argv: list[str] | None = None) -> int:
         contact=args.contact,
         observers=args.observers,
         prog=args.prog,
+        non_survey_measurer=args.non_survey_measurer,
         output_dir=args.output_dir,
         strict=args.strict,
     )

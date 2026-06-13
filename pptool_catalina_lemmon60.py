@@ -318,6 +318,9 @@ def run_workflow(args):
             args.fallback_group, args.target)
         manifest['fallback_used'] = True
 
+    from pptool_pp_cutouts import record_pp_cutouts
+    record_pp_cutouts(manifest, image_dir, args.target,
+                      photometry_file=photometry_path)
     manifest_path = write_manifest(image_dir, manifest)
     return manifest_path
 

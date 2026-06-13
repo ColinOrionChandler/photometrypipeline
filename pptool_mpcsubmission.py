@@ -91,8 +91,8 @@ class PhotometryObservation:
     photometry_file: Path
     catalog_token: str
     julian_date: float
-    mag: float
-    mag_sig: float
+    mag: float | None
+    mag_sig: float | None
     ra_deg: float
     dec_deg: float
     exptime: float
@@ -111,6 +111,10 @@ class PhotometryObservation:
     @property
     def obs_time(self) -> Time:
         return Time(self.julian_date, format="jd", scale="utc")
+
+    @property
+    def astrometry_only(self) -> bool:
+        return self.mag is None or self.mag_sig is None
 
 
 @dataclass
@@ -220,6 +224,13 @@ def _float_or_none(value: str) -> float | None:
     except (TypeError, ValueError):
         return None
     if not math.isfinite(result):
+        return None
+    return result
+
+
+def _photometry_float_or_none(value: str) -> float | None:
+    result = _float_or_none(value)
+    if result is None or result >= 90:
         return None
     return result
 
@@ -357,8 +368,8 @@ def make_observation(photometry_file: Path,
         photometry_file=photometry_file,
         catalog_token=row["catalog_token"],
         julian_date=float(row["julian_date"]),
-        mag=float(row["mag"]),
-        mag_sig=float(row["mag_sig"]),
+        mag=_photometry_float_or_none(row["mag"]),
+        mag_sig=_photometry_float_or_none(row["mag_sig"]),
         ra_deg=float(row["ra_deg"]),
         dec_deg=float(row["dec_deg"]),
         exptime=float(row["exptime"]),
@@ -638,10 +649,10 @@ def format_ades_psv(observations: list[PhotometryObservation],
             "rmsRA": _format_float(obs.ra_tot_sig, 4),
             "rmsDec": _format_float(obs.dec_tot_sig, 4),
             "astCat": config.astcat,
-            "photCat": photcat,
+            "photCat": "" if obs.astrometry_only else photcat,
             "mag": _format_float(obs.mag, 4),
             "rmsMag": _format_float(obs.mag_sig, 4),
-            "band": obs.band,
+            "band": "" if obs.astrometry_only else obs.band,
             "exp": _format_float(obs.exptime, 2),
             "seeing": _format_float(obs.fwhm, 2),
             "prog": config.prog or "",
@@ -663,6 +674,8 @@ def format_80col_observation(obs: PhotometryObservation,
                               alwayssign=True, pad=True)
     date = _format_80col_date(obs.obs_time)
     band = (obs.band or "C")[:1]
+    mag_band = "       " if obs.astrometry_only else "%5.1f %1s" % (
+        obs.mag, band)
     program_code = config.prog if config.prog and len(config.prog) == 1 else " "
     observation_note = obs80_observation_note(config)
 
@@ -672,7 +685,7 @@ def format_80col_observation(obs: PhotometryObservation,
         "%s " % ra +
         "%s" % dec +
         "         " +
-        "%5.1f %1s" % (obs.mag, band) +
+        mag_band +
         "%s%4s%s%3s" %
         (observation_note, "", program_code, config.observatory_code)
     )
@@ -765,6 +778,8 @@ def format_summary(input_path: Path,
         pack_minor_planet_provisional_designation(config.target),
         "Input: %s" % input_path.expanduser().resolve(),
         "Observations: %d" % len(observations),
+        "Astrometry-only observations: %d" %
+        sum(1 for obs in observations if obs.astrometry_only),
         "Observatory code: %s" % config.observatory_code,
         "Astrometric catalog: %s" % config.astcat,
         "Photometric catalog(s): %s" % ", ".join(photcats),

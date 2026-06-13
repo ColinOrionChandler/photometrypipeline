@@ -575,6 +575,12 @@ def main(argv=None):
         manifest['pp_outputs'] = outputs
         manifest['combined_photometry_files'] = combine_filter_photometry(
             image_dir, args.target, outputs)
+        from pptool_pp_cutouts import record_pp_cutouts
+        record_pp_cutouts(
+            manifest, image_dir, args.target,
+            photometry_file=(manifest['combined_photometry_files'][0]
+                             if manifest['combined_photometry_files']
+                             else None))
         manifest_path = write_manifest(image_dir, manifest)
         manifest['manifest_path'] = str(manifest_path)
 

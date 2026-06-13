@@ -461,6 +461,8 @@ def run_workflow(sdss_dir, output_root, target, cutouts=None,
         else:
             manifest["combined_photometry_csv"] = str(combined_path)
             manifest["combined_photometry_rows"] = len(rows)
+        from pptool_pp_cutouts import record_pp_cutouts
+        record_pp_cutouts(manifest, output_root, target)
         manifest_path = write_manifest(output_root, manifest)
         manifest["manifest_path"] = str(manifest_path)
     return manifest

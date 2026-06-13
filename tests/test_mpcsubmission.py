@@ -14,6 +14,9 @@ PHOTOMETRY_TEXT = """# header
  c4d_test 2457398.7899512  21.3285 0.0877  144.17425351  +13.91718331 -0.25  2.36  0.00  0.00 47.00  29.4913 0.0342  -8.1628 0.0808 SDSS-R9 r   0 DECam      APER 0.87  0.0808  0.0342  0.0877  0.0121  0.0121  0.0171  0.0638  0.0816  0.1036  0.0650  0.0825  0.1050
 """
 
+PHOTOMETRY_TEXT_ASTROMETRY_ONLY = PHOTOMETRY_TEXT.replace(
+    "21.3285 0.0877", "125.1690 99.0000", 1)
+
 
 def write_test_fits(path):
     header = fits.Header()
@@ -105,6 +108,41 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     ]
     assert len(obs_lines) == 1
     assert len(obs_lines[0]) == 80
+    assert obs_lines[0].endswith("W84")
+
+
+def test_missing_photometry_row_is_astrometry_only_observation(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT_ASTROMETRY_ONLY)
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(target="2016 CJ155",
+                                     output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert len(bundle.observations) == 1
+    assert bundle.observations[0].astrometry_only
+    assert bundle.observations[0].mag is None
+    assert bundle.observations[0].mag_sig is None
+    assert "Astrometry-only observations: 1" in bundle.summary_text
+
+    ades_rows = [
+        line for line in bundle.ades_text.splitlines()
+        if line.startswith("|2016 CJ155||CCD|")
+    ]
+    assert len(ades_rows) == 1
+    fields = ades_rows[0].split("|")
+    assert fields[10] == "Gaia2"
+    assert fields[11:15] == ["", "", "", ""]
+    assert fields[15] == "47"
+
+    obs_lines = [
+        line for line in bundle.obs80_text.splitlines()
+        if line.startswith("     K16CF5J")
+    ]
+    assert len(obs_lines) == 1
+    assert len(obs_lines[0]) == 80
+    assert obs_lines[0][65:71].strip() == ""
     assert obs_lines[0].endswith("W84")
 
 

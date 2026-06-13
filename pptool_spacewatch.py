@@ -457,6 +457,8 @@ def run_workflow(manifest, fixed_aprad=0.0, rejectionfilter="pos"):
         }
         outputs.append(group_output)
     manifest["pp_outputs"] = outputs
+    from pptool_pp_cutouts import record_pp_cutouts
+    record_pp_cutouts(manifest, manifest["pp_root"], manifest["target"])
     manifest_path = write_manifest(manifest["pp_root"], manifest)
     manifest["manifest_path"] = str(manifest_path)
     return outputs

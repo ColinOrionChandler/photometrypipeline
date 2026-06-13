@@ -721,6 +721,12 @@ def run_workflow(args):
         manifest['pp_outputs'] = outputs
         manifest['combined_photometry_files'] = combine_filter_photometry(
             pp_dir, args.target, outputs)
+        from pptool_pp_cutouts import record_pp_cutouts
+        record_pp_cutouts(
+            manifest, pp_dir, args.target,
+            photometry_file=(manifest['combined_photometry_files'][0]
+                             if manifest['combined_photometry_files']
+                             else None))
         manifest['mpc_outputs'] = build_mpc_outputs(
             pp_dir, args.target, observatory_code=args.observatory_code)
         manifest_path = write_manifest(pp_dir, manifest)

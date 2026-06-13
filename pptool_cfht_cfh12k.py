@@ -26,6 +26,11 @@ MANIFEST_NAME = 'cfht_cfh12k_workflow_manifest.json'
 WORKING_PREFIX = 'cfh12k'
 TARGET_TRANSLATION = str.maketrans(' /()', '____')
 DEFAULT_MAGZP_SIG = 0.03
+DEFAULT_CLICK_PIXEL_ORIGIN = 0
+DEFAULT_CENTROID_SEARCH_RADIUS = 6.0
+DEFAULT_CENTROID_APERTURE_RADIUS = 3.0
+DEFAULT_CENTROID_MIN_SNR = 1.5
+DEFAULT_MAX_PP_MATCH_RESIDUAL_ARCSEC = 2.0
 
 
 @contextmanager
@@ -158,6 +163,128 @@ def resolve_cutout_path(base_dir, image_id, chip_hdu, detector_chip=None):
             if matches:
                 return matches[0].resolve()
     return None
+
+
+def first_image_hdu_index(hdulist):
+    """Locate the first image-bearing HDU in a FITS file."""
+
+    for idx, hdu in enumerate(hdulist):
+        data = getattr(hdu, 'data', None)
+        if data is not None and len(data.shape) >= 2:
+            return idx
+    raise ValueError('no image-bearing HDU found')
+
+
+def read_clicked_rows(click_points_csv):
+    """Load clicked CFH12K PNG rows and resolve their FITS cutouts."""
+
+    csv_path = Path(click_points_csv).expanduser().resolve()
+    base_dir = csv_path.parent
+    rows = []
+    with csv_path.open(newline='') as handle:
+        reader = csv.DictReader(handle)
+        for index, row in enumerate(reader, start=1):
+            if str(row.get('status', '')).strip().lower() != 'clicked':
+                continue
+            parsed = parse_cutout_name(row['image'])
+            cutout_path = base_dir / Path(row['image']).with_suffix('.fits')
+            if not cutout_path.exists():
+                raise FileNotFoundError('cannot find FITS cutout for %s' %
+                                        row['image'])
+            rows.append({
+                'row_index': index,
+                'image': row['image'],
+                'image_id': parsed['image_id'],
+                'chip_hdu': parsed['chip_hdu'],
+                'detector_chip': parsed['detector_chip'],
+                'x': float(row['x']),
+                'y': float(row['y']),
+                'width': float(row['width']),
+                'height': float(row['height']),
+                'status': row.get('status', ''),
+                'cutout_path': str(cutout_path.resolve()),
+            })
+    if not rows:
+        raise ValueError('no clicked rows found in %s' % csv_path)
+    return rows
+
+
+def derive_click_position(cutout_path, click,
+                          pixel_origin=DEFAULT_CLICK_PIXEL_ORIGIN):
+    """Convert one PNG click into a sky position through cutout WCS."""
+
+    with fits.open(str(cutout_path), memmap=False,
+                   ignore_missing_end=True) as hdulist:
+        hdu_index = first_image_hdu_index(hdulist)
+        hdu = hdulist[hdu_index]
+        ny, nx = hdu.data.shape[-2:]
+        scaled_x = float(click['x']) * float(nx) / float(click['width'])
+        scaled_y = float(click['y']) * float(ny) / float(click['height'])
+        ra_deg, dec_deg = WCS(hdu.header, relax=True).all_pix2world(
+            [[scaled_x, scaled_y]], int(pixel_origin))[0]
+    return {
+        'cutout': str(cutout_path),
+        'cutout_name': Path(cutout_path).name,
+        'cutout_hdu': hdu_index,
+        'display_x': float(click['x']),
+        'display_y': float(click['y']),
+        'display_width': float(click['width']),
+        'display_height': float(click['height']),
+        'fits_x': float(scaled_x),
+        'fits_y': float(scaled_y),
+        'fits_width': int(nx),
+        'fits_height': int(ny),
+        'pixel_origin': int(pixel_origin),
+        'ra_deg': float(ra_deg),
+        'dec_deg': float(dec_deg),
+    }
+
+
+def apply_click_positions(location_records, click_points_csv,
+                          pixel_origin=DEFAULT_CLICK_PIXEL_ORIGIN):
+    """Select clicked records and replace their target positions."""
+
+    clicks = read_clicked_rows(click_points_csv)
+    click_by_image = {}
+    for click in clicks:
+        if click['image_id'] in click_by_image:
+            raise ValueError('multiple clicked rows for %s' %
+                             click['image_id'])
+        click_by_image[click['image_id']] = click
+
+    clicked_records = []
+    for record in location_records:
+        click = click_by_image.get(record['image_id'])
+        if click is None:
+            continue
+        if int(click['chip_hdu']) != int(record['chip_hdu']):
+            raise ValueError('clicked chip %d does not match %s HDU %d' %
+                             (int(click['chip_hdu']), record['image_id'],
+                              int(record['chip_hdu'])))
+        position = derive_click_position(click['cutout_path'], click,
+                                         pixel_origin=pixel_origin)
+        updated = dict(record)
+        updated['target_ra_deg'] = position['ra_deg']
+        updated['target_dec_deg'] = position['dec_deg']
+        updated['click_position'] = position
+        updated['position_source'] = 'click_points'
+        updated['cutout_path'] = click['cutout_path']
+        updated['detector_chip'] = int(click['detector_chip'])
+        updated['cutout_chip'] = {
+            'image_id': click['image_id'],
+            'chip_hdu': int(click['chip_hdu']),
+            'detector_chip': int(click['detector_chip']),
+        }
+        clicked_records.append(updated)
+
+    missing = sorted(set(click_by_image) -
+                     set(record['image_id'] for record in clicked_records))
+    if missing:
+        raise ValueError('clicked image ids not found in locations CSV: %s' %
+                         ', '.join(missing))
+    if not clicked_records:
+        raise ValueError('click CSV did not match any location rows')
+    return clicked_records, clicks
 
 
 def image_shape_from_header(header):
@@ -299,6 +426,122 @@ def repair_nonfinite_pixels(data):
     fill_value = float(np.median(good)) if good.size else 0.0
     image[bad] = fill_value
     return image, n_bad, fill_value
+
+
+def robust_sky_sigma(values):
+    """Return a robust sky and sigma estimate for a small image patch."""
+
+    finite = np.asarray(values)[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0, 1.0
+    sky = float(np.median(finite))
+    mad = float(np.median(np.abs(finite - sky)))
+    sigma = 1.4826 * mad
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = float(np.std(finite))
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = 1.0
+    return sky, sigma
+
+
+def refine_position_by_centroid(working_path, ra_deg, dec_deg,
+                                search_radius=DEFAULT_CENTROID_SEARCH_RADIUS,
+                                aperture_radius=DEFAULT_CENTROID_APERTURE_RADIUS,
+                                min_snr=DEFAULT_CENTROID_MIN_SNR):
+    """Centroid the closest faint positive source near an input sky position."""
+
+    with fits.open(str(working_path), mode='update', memmap=False,
+                   ignore_missing_end=True) as hdulist:
+        data = np.asarray(hdulist[0].data, dtype=np.float32)
+        header = hdulist[0].header
+        wcs = WCS(header, relax=True)
+        x0, y0 = wcs.all_world2pix([[float(ra_deg), float(dec_deg)]], 0)[0]
+        result = {
+            'input_ra_deg': float(ra_deg),
+            'input_dec_deg': float(dec_deg),
+            'input_x': float(x0),
+            'input_y': float(y0),
+            'search_radius_px': float(search_radius),
+            'aperture_radius_px': float(aperture_radius),
+            'min_snr': float(min_snr),
+            'used': False,
+            'reason': None,
+        }
+        if (not np.isfinite(x0) or not np.isfinite(y0) or
+                x0 < 0 or y0 < 0 or
+                x0 >= data.shape[1] or y0 >= data.shape[0]):
+            result['reason'] = 'input position outside full chip'
+            return result
+
+        radius = max(1, int(np.ceil(float(search_radius))))
+        x_min = max(0, int(np.floor(x0)) - radius)
+        x_max = min(data.shape[1] - 1, int(np.floor(x0)) + radius)
+        y_min = max(0, int(np.floor(y0)) - radius)
+        y_max = min(data.shape[0] - 1, int(np.floor(y0)) + radius)
+        patch = data[y_min:y_max + 1, x_min:x_max + 1]
+        if patch.size == 0 or not np.isfinite(patch).any():
+            result['reason'] = 'no finite pixels in centroid search box'
+            return result
+
+        sky, sigma = robust_sky_sigma(patch)
+        yy, xx = np.indices(patch.shape, dtype=float)
+        abs_x = xx + x_min
+        abs_y = yy + y_min
+        distance = np.hypot(abs_x - x0, abs_y - y0)
+        candidates = np.isfinite(patch) & (distance <= float(search_radius))
+        positive = candidates & ((patch - sky) >= float(min_snr) * sigma)
+        if not positive.any():
+            result['reason'] = 'no positive source above SNR threshold'
+            result['sky'] = sky
+            result['sigma'] = sigma
+            return result
+
+        candidate_indices = np.argwhere(positive)
+        distances = distance[positive]
+        fluxes = (patch - sky)[positive]
+        order = np.lexsort((-fluxes, distances))
+        peak_y, peak_x = candidate_indices[order[0]]
+        peak_abs_x = float(peak_x + x_min)
+        peak_abs_y = float(peak_y + y_min)
+
+        aperture = (np.hypot(abs_x - peak_abs_x, abs_y - peak_abs_y) <=
+                    float(aperture_radius))
+        weights = np.where(aperture & np.isfinite(patch), patch - sky, 0.0)
+        weights = np.where(weights > 0, weights, 0.0)
+        total = float(weights.sum())
+        if total <= 0 or not np.isfinite(total):
+            result['reason'] = 'non-positive centroid aperture flux'
+            result['sky'] = sky
+            result['sigma'] = sigma
+            result['peak_x'] = peak_abs_x
+            result['peak_y'] = peak_abs_y
+            return result
+
+        cx = float((weights * abs_x).sum() / total)
+        cy = float((weights * abs_y).sum() / total)
+        refined_ra, refined_dec = wcs.all_pix2world([[cx, cy]], 0)[0]
+        header['TARGRA'] = (float(refined_ra), 'target RA after centroiding')
+        header['TARGDEC'] = (float(refined_dec), 'target Dec after centroiding')
+        header['TARGX'] = (cx, 'target centroid x pixel, origin 0')
+        header['TARGY'] = (cy, 'target centroid y pixel, origin 0')
+        header['CENTROID'] = (True, 'target position was centroid-refined')
+        hdulist.flush(output_verify='silentfix')
+
+    result.update({
+        'used': True,
+        'reason': 'centroided nearest positive source',
+        'sky': sky,
+        'sigma': sigma,
+        'peak_snr': float((patch[int(peak_y), int(peak_x)] - sky) / sigma),
+        'peak_x': peak_abs_x,
+        'peak_y': peak_abs_y,
+        'centroid_x': cx,
+        'centroid_y': cy,
+        'ra_deg': float(refined_ra),
+        'dec_deg': float(refined_dec),
+        'offset_from_input_px': float(np.hypot(cx - x0, cy - y0)),
+    })
+    return result
 
 
 def midtime_values(header, fallback_mid_jd=None):
@@ -450,10 +693,27 @@ def working_filename(location_record, sequence):
 
 
 def prepare_records(base_dir, pp_dir, target,
-                    magzp_sig=DEFAULT_MAGZP_SIG):
+                    magzp_sig=DEFAULT_MAGZP_SIG, click_points_csv=None,
+                    click_pixel_origin=DEFAULT_CLICK_PIXEL_ORIGIN,
+                    centroid=True,
+                    centroid_search_radius=DEFAULT_CENTROID_SEARCH_RADIUS,
+                    centroid_aperture_radius=DEFAULT_CENTROID_APERTURE_RADIUS,
+                    centroid_min_snr=DEFAULT_CENTROID_MIN_SNR):
     """Create PP-ready FITS files from CFH12K location records."""
 
     locations = read_location_records(base_dir, target)
+    click_rows = []
+    skipped_location_image_ids = []
+    if click_points_csv is not None:
+        all_image_ids = [record['image_id'] for record in locations]
+        locations, click_rows = apply_click_positions(
+            locations, click_points_csv, pixel_origin=click_pixel_origin)
+        clicked_image_ids = set(record['image_id'] for record in locations)
+        skipped_location_image_ids = [
+            image_id for image_id in all_image_ids
+            if image_id not in clicked_image_ids
+        ]
+
     records = []
     for sequence, location_record in enumerate(locations, start=1):
         date_dir = location_record['date']
@@ -468,11 +728,39 @@ def prepare_records(base_dir, pp_dir, target,
         record = normalize_extracted_fits(
             working_path, location_record, target, sequence,
             magzp_sig=magzp_sig)
+        record['position_source'] = location_record.get(
+            'position_source', 'locations_csv')
+        if location_record.get('click_position') is not None:
+            record['click_position'] = location_record['click_position']
+        if centroid:
+            centroid_result = refine_position_by_centroid(
+                working_path, record['target_ra_deg'],
+                record['target_dec_deg'],
+                search_radius=centroid_search_radius,
+                aperture_radius=centroid_aperture_radius,
+                min_snr=centroid_min_snr)
+            record['centroid'] = centroid_result
+            if centroid_result.get('used'):
+                record['target_ra_deg'] = centroid_result['ra_deg']
+                record['target_dec_deg'] = centroid_result['dec_deg']
+                record['position_source'] = (
+                    record['position_source'] + '+centroid')
         record['filter_dir'] = str(filter_dir)
         record['filter_dir_relative'] = str(filter_dir.relative_to(pp_dir))
         record['location_record'] = dict(location_record)
         records.append(record)
-    return records
+    return records, {
+        'click_points_csv': (str(Path(click_points_csv).expanduser().resolve())
+                             if click_points_csv is not None else None),
+        'click_pixel_origin': int(click_pixel_origin),
+        'n_click_rows': len(click_rows),
+        'clicked_images': [row['image_id'] for row in click_rows],
+        'skipped_location_image_ids': skipped_location_image_ids,
+        'centroid': bool(centroid),
+        'centroid_search_radius_px': float(centroid_search_radius),
+        'centroid_aperture_radius_px': float(centroid_aperture_radius),
+        'centroid_min_snr': float(centroid_min_snr),
+    }
 
 
 def positions_filename(target, filt):
@@ -544,17 +832,76 @@ def split_photometry_file(path):
     return header, rows, footer
 
 
-def rewrite_row_catalog_token(row, relative_dir):
+def row_match_residual_arcsec(values):
+    """Return total PP predicted-minus-measured residual from row values."""
+
+    try:
+        dra = float(values[6])
+        ddec = float(values[7])
+    except (IndexError, TypeError, ValueError):
+        return None
+    if not np.isfinite(dra) or not np.isfinite(ddec):
+        return None
+    return float(np.hypot(dra, ddec))
+
+
+def forced_astrometry_only_row(values, target_position):
+    """Replace a false PP source match with supplied astrometry-only values."""
+
+    values = list(values)
+    values[2] = '99.0000'
+    values[3] = '99.0000'
+    values[4] = '%.8f' % float(target_position['target_ra_deg'])
+    values[5] = '%+.8f' % float(target_position['target_dec_deg'])
+    values[6] = '0.00'
+    values[7] = '0.00'
+    if len(values) > 13:
+        values[13] = '99.0000'
+    if len(values) > 14:
+        values[14] = '99.0000'
+    for index in (21, 23):
+        if len(values) > index:
+            values[index] = '99.0000'
+    return values
+
+
+def rewrite_row_catalog_token(row, relative_dir, target_positions=None,
+                              max_match_residual_arcsec=None,
+                              rewrites=None):
     """Rewrite a per-directory PP row so root tools can resolve FITS."""
 
     values = row.split()
     if not values:
         return row
-    values[0] = str(Path(relative_dir) / values[0])
+    original_token = values[0]
+    if max_match_residual_arcsec is not None and target_positions:
+        residual = row_match_residual_arcsec(values)
+        target_position = target_positions.get(
+            Path(original_token).with_suffix('.fits').name)
+        if (residual is not None and
+                residual > float(max_match_residual_arcsec) and
+                target_position is not None):
+            values = forced_astrometry_only_row(values, target_position)
+            if rewrites is not None:
+                rewrites.append({
+                    'catalog_token': str(Path(relative_dir) / original_token),
+                    'working_name': target_position.get('working_name'),
+                    'residual_arcsec': residual,
+                    'max_match_residual_arcsec': float(
+                        max_match_residual_arcsec),
+                    'ra_deg': float(target_position['target_ra_deg']),
+                    'dec_deg': float(target_position['target_dec_deg']),
+                    'position_source': target_position.get(
+                        'position_source'),
+                    'reason': 'PP source match exceeded residual threshold; '
+                              'using supplied astrometry-only position',
+                })
+    values[0] = str(Path(relative_dir) / original_token)
     return ' ' + ' '.join(values) + '\n'
 
 
-def combine_filter_photometry(pp_dir, target, outputs):
+def combine_filter_photometry(pp_dir, target, outputs,
+                              max_match_residual_arcsec=None):
     """Combine per-date/filter PP photometry into root-level products."""
 
     pp_dir = Path(pp_dir)
@@ -566,10 +913,19 @@ def combine_filter_photometry(pp_dir, target, outputs):
 
     first_header, first_rows, first_footer = split_photometry_file(
         existing[0]['photometry_file'])
-    rows = [rewrite_row_catalog_token(row, existing[0]['relative_dir'])
+    rewrites = []
+    rows = [rewrite_row_catalog_token(
+                row, existing[0]['relative_dir'],
+                target_positions=existing[0].get('target_positions'),
+                max_match_residual_arcsec=max_match_residual_arcsec,
+                rewrites=rewrites)
             for row in first_rows]
     for output in existing[1:]:
-        rows.extend(rewrite_row_catalog_token(row, output['relative_dir'])
+        rows.extend(rewrite_row_catalog_token(
+                    row, output['relative_dir'],
+                    target_positions=output.get('target_positions'),
+                    max_match_residual_arcsec=max_match_residual_arcsec,
+                    rewrites=rewrites)
                     for row in split_photometry_file(
                         output['photometry_file'])[1])
 
@@ -580,7 +936,10 @@ def combine_filter_photometry(pp_dir, target, outputs):
     ]
     for destination in destinations:
         destination.write_text(combined_text)
-    return [str(destination) for destination in destinations]
+    return {
+        'files': [str(destination) for destination in destinations],
+        'forced_astrometry_only_rows': rewrites,
+    }
 
 
 def grouped_records(records):
@@ -619,6 +978,14 @@ def run_pp_by_group(pp_dir, records, target, fixed_aprad=0.0,
                                 if photometry_path.exists() else None),
             'working_names': [record['working_name']
                               for record in group_records],
+            'target_positions': {
+                record['working_name']: {
+                    'working_name': record['working_name'],
+                    'target_ra_deg': float(record['target_ra_deg']),
+                    'target_dec_deg': float(record['target_dec_deg']),
+                    'position_source': record.get('position_source'),
+                } for record in group_records
+            },
         })
     return outputs
 
@@ -664,12 +1031,28 @@ def build_mpc_outputs(pp_dir, target, observatory_code='568'):
 
 
 def find_find_orb_executable():
-    """Return a local Find_Orb command if one is on PATH."""
+    """Return a local Find_Orb command from PATH or common Project Pluto builds."""
 
-    for name in ('find_orb', 'fo'):
+    env_path = os.environ.get('FIND_ORB_EXECUTABLE')
+    if env_path and Path(env_path).expanduser().exists():
+        return str(Path(env_path).expanduser().resolve())
+    for name in ('fo', 'find_orb'):
         exe = shutil.which(name)
         if exe:
             return exe
+    home = Path.home()
+    candidates = []
+    for github_name in ('Github', 'GitHub'):
+        root = home / github_name / 'find_orb'
+        candidates.extend([
+            root / '.local' / 'bin' / 'fo',
+            root / 'fo',
+            root / '.local' / 'bin' / 'find_orb',
+            root / 'find_orb',
+        ])
+    for candidate in candidates:
+        if candidate.exists() and os.access(str(candidate), os.X_OK):
+            return str(candidate.resolve())
     return None
 
 
@@ -684,12 +1067,72 @@ def run_find_orb_case(executable, input_path, case_dir):
         proc = subprocess.run([executable, str(input_path)],
                               cwd=str(case_dir), stdout=stdout,
                               stderr=stderr, timeout=300)
+    summary = write_find_orb_summary(stdout_path, case_dir)
     return {
         'returncode': proc.returncode,
         'stdout': str(stdout_path),
         'stderr': str(stderr_path),
+        'summary': summary,
         'files': sorted(path.name for path in case_dir.iterdir()),
     }
+
+
+def strip_ansi(text):
+    """Remove terminal color escapes from Find_Orb output."""
+
+    return re.sub(r'\x1b\[[0-9;]*m', '', text)
+
+
+def parse_find_orb_stdout(text):
+    """Parse the compact command-line fo orbit summary."""
+
+    clean = strip_ansi(text)
+    match = re.search(
+        r'^\s*\d+:\s*(?P<object>.*?);\s*'
+        r'a=(?P<a>[-+0-9.]+),\s*'
+        r'e=(?P<e>[-+0-9.]+),\s*'
+        r'i=(?P<i>[-+0-9.]+)\s+'
+        r'(?:(?P<used_obs>\d+)\s*/\s*)?'
+        r'(?P<n_obs>\d+)\s+obs;\s*'
+        r'(?P<arc>.+?)\s*$',
+        clean, flags=re.MULTILINE)
+    if match is None:
+        return None
+    return {
+        'object': match.group('object').strip(),
+        'semimajor_axis_au': float(match.group('a')),
+        'eccentricity': float(match.group('e')),
+        'inclination_deg': float(match.group('i')),
+        'observations': int(match.group('used_obs') or match.group('n_obs')),
+        'total_observations': int(match.group('n_obs')),
+        'arc': match.group('arc').strip(),
+    }
+
+
+def write_find_orb_summary(stdout_path, case_dir):
+    """Write parsed Find_Orb stdout summary sidecars if possible."""
+
+    stdout_path = Path(stdout_path)
+    case_dir = Path(case_dir)
+    parsed = parse_find_orb_stdout(stdout_path.read_text(errors='replace'))
+    if parsed is None:
+        return None
+    json_path = case_dir / 'orbit_summary.json'
+    md_path = case_dir / 'orbit_summary.md'
+    json_path.write_text(json.dumps(parsed, indent=2, sort_keys=True) + '\n')
+    md_path.write_text(
+        '# Find_Orb Summary\n\n'
+        '- Object: {object}\n'
+        '- Observations used: {observations}\n'
+        '- Observations total: {total_observations}\n'
+        '- Arc: {arc}\n'
+        '- Semimajor axis a: {semimajor_axis_au:.3f} au\n'
+        '- Eccentricity e: {eccentricity:.3f}\n'
+        '- Inclination i: {inclination_deg:.3f} deg\n'.format(**parsed))
+    result = dict(parsed)
+    result['json_path'] = str(json_path)
+    result['markdown_path'] = str(md_path)
+    return result
 
 
 def prepare_orbit_check(pp_dir, target, mpc_outputs):
@@ -722,6 +1165,7 @@ def prepare_orbit_check(pp_dir, target, mpc_outputs):
     if executable is None:
         result['warnings'].append('Find_Orb executable not found on PATH')
         return result
+    result['executable'] = executable
 
     try:
         run = run_find_orb_case(executable, new_obs_path,
@@ -745,7 +1189,12 @@ def write_manifest(pp_dir, manifest):
 
 
 def build_workflow(base_dir, target, pp_dir=None,
-                   magzp_sig=DEFAULT_MAGZP_SIG):
+                   magzp_sig=DEFAULT_MAGZP_SIG, click_points_csv=None,
+                   click_pixel_origin=DEFAULT_CLICK_PIXEL_ORIGIN,
+                   centroid=True,
+                   centroid_search_radius=DEFAULT_CENTROID_SEARCH_RADIUS,
+                   centroid_aperture_radius=DEFAULT_CENTROID_APERTURE_RADIUS,
+                   centroid_min_snr=DEFAULT_CENTROID_MIN_SNR):
     """Prepare PP-ready CFH12K chip FITS files and positions sidecars."""
 
     base_dir = Path(base_dir).expanduser().resolve()
@@ -754,8 +1203,13 @@ def build_workflow(base_dir, target, pp_dir=None,
     pp_dir = Path(pp_dir).expanduser().resolve()
     pp_dir.mkdir(parents=True, exist_ok=True)
 
-    records = prepare_records(base_dir, pp_dir, target,
-                              magzp_sig=magzp_sig)
+    records, position_inputs = prepare_records(
+        base_dir, pp_dir, target, magzp_sig=magzp_sig,
+        click_points_csv=click_points_csv,
+        click_pixel_origin=click_pixel_origin, centroid=centroid,
+        centroid_search_radius=centroid_search_radius,
+        centroid_aperture_radius=centroid_aperture_radius,
+        centroid_min_snr=centroid_min_snr)
     positions_files = write_positions_by_group(pp_dir, records, target)
     manifest = {
         'workflow': 'cfht_cfh12k_locations',
@@ -765,6 +1219,7 @@ def build_workflow(base_dir, target, pp_dir=None,
         'pp_dir': str(pp_dir),
         'magzp_sig_default': float(magzp_sig),
         'records': records,
+        'position_inputs': position_inputs,
         'positions_files': positions_files,
         'filters': sorted(set(record['filter_dir_name']
                               for record in records)),
@@ -783,7 +1238,13 @@ def run_workflow(args):
 
     manifest = build_workflow(
         args.base_dir, args.target, pp_dir=args.pp_dir,
-        magzp_sig=args.magzp_sig)
+        magzp_sig=args.magzp_sig,
+        click_points_csv=args.click_points_csv,
+        click_pixel_origin=args.click_pixel_origin,
+        centroid=not args.no_centroid,
+        centroid_search_radius=args.centroid_search_radius,
+        centroid_aperture_radius=args.centroid_aperture_radius,
+        centroid_min_snr=args.centroid_min_snr)
 
     pp_dir = Path(manifest['pp_dir'])
     if not args.prepare_only:
@@ -792,8 +1253,14 @@ def run_workflow(args):
             pp_dir, manifest['records'], args.target,
             fixed_aprad=args.fixed_aprad, rejectionfilter=args.reject)
         manifest['pp_outputs'] = outputs
-        manifest['combined_photometry_files'] = combine_filter_photometry(
-            pp_dir, args.target, outputs)
+        combined = combine_filter_photometry(
+            pp_dir, args.target, outputs,
+            max_match_residual_arcsec=args.max_match_residual_arcsec)
+        manifest['combined_photometry_files'] = combined['files']
+        manifest['forced_astrometry_only_rows'] = combined[
+            'forced_astrometry_only_rows']
+        manifest['max_match_residual_arcsec'] = float(
+            args.max_match_residual_arcsec)
         from pptool_pp_cutouts import record_pp_cutouts
         record_pp_cutouts(
             manifest, pp_dir, args.target,
@@ -829,6 +1296,31 @@ def build_arg_parser():
                         help='PP target rejection schema, e.g. pos or none')
     parser.add_argument('--observatory-code', default='568',
                         help='MPC observatory code for submission files')
+    parser.add_argument('--click-points-csv',
+                        help='clicked PNG positions to translate through '
+                             'cutout WCS and use instead of locations CSV '
+                             'positions; only clicked rows are processed')
+    parser.add_argument('--click-pixel-origin', type=int,
+                        default=DEFAULT_CLICK_PIXEL_ORIGIN,
+                        help='FITS WCS origin for click coordinates')
+    parser.add_argument('--no-centroid', action='store_true',
+                        help='use click-derived WCS positions without local '
+                             'full-chip centroid refinement')
+    parser.add_argument('--centroid-search-radius', type=float,
+                        default=DEFAULT_CENTROID_SEARCH_RADIUS,
+                        help='full-chip search radius in pixels around click '
+                             'position')
+    parser.add_argument('--centroid-aperture-radius', type=float,
+                        default=DEFAULT_CENTROID_APERTURE_RADIUS,
+                        help='centroid aperture radius in pixels')
+    parser.add_argument('--centroid-min-snr', type=float,
+                        default=DEFAULT_CENTROID_MIN_SNR,
+                        help='minimum local SNR for centroid peak selection')
+    parser.add_argument('--max-match-residual-arcsec', type=float,
+                        default=DEFAULT_MAX_PP_MATCH_RESIDUAL_ARCSEC,
+                        help='convert PP source matches farther than this '
+                             'from the supplied position into active '
+                             'astrometry-only rows')
     parser.add_argument('--prepare-only', action='store_true',
                         help='write PP-ready FITS/positions but do not run PP')
     return parser

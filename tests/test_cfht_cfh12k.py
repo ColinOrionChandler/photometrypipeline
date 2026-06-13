@@ -84,6 +84,110 @@ def test_parse_cutout_name_extracts_one_based_and_detector_chips():
     }
 
 
+def test_derive_click_position_uses_cutout_wcs(tmp_path):
+    cutout_path = tmp_path / (
+        "2025_MH348_2002-06-09_12.21.55.920000_641273p_"
+        "chip10-chip09_126arcsec_NuEl.fits")
+    header = fits.Header()
+    header["CTYPE1"] = "RA---TAN"
+    header["CTYPE2"] = "DEC--TAN"
+    header["CRVAL1"] = 266.25
+    header["CRVAL2"] = 4.75
+    header["CRPIX1"] = 6.0
+    header["CRPIX2"] = 6.0
+    header["CDELT1"] = -1.0 / 3600.0
+    header["CDELT2"] = 1.0 / 3600.0
+    fits.PrimaryHDU(data=np.ones((11, 11), dtype=np.float32),
+                    header=header).writeto(cutout_path)
+    click = {
+        "x": 5,
+        "y": 5,
+        "width": 11,
+        "height": 11,
+    }
+
+    position = cfh12k.derive_click_position(cutout_path, click)
+
+    assert np.isclose(position["ra_deg"], 266.25)
+    assert np.isclose(position["dec_deg"], 4.75)
+    assert position["fits_x"] == 5
+    assert position["fits_y"] == 5
+
+
+def test_refine_position_by_centroid_updates_full_chip_position(tmp_path):
+    image_path = tmp_path / "chip.fits"
+    header = fits.Header()
+    header["CTYPE1"] = "RA---TAN"
+    header["CTYPE2"] = "DEC--TAN"
+    header["CRVAL1"] = 266.25
+    header["CRVAL2"] = 4.75
+    header["CRPIX1"] = 11.0
+    header["CRPIX2"] = 11.0
+    header["CDELT1"] = -1.0 / 3600.0
+    header["CDELT2"] = 1.0 / 3600.0
+    data = np.full((21, 21), 100.0, dtype=np.float32)
+    data[11, 12] = 120.0
+    data[11, 13] = 110.0
+    fits.PrimaryHDU(data=data, header=header).writeto(image_path)
+
+    result = cfh12k.refine_position_by_centroid(
+        image_path, 266.25, 4.75, search_radius=4,
+        aperture_radius=2, min_snr=0.5)
+
+    assert result["used"] is True
+    assert result["centroid_x"] > 11.5
+    assert result["offset_from_input_px"] > 0
+    with fits.open(image_path) as hdulist:
+        assert hdulist[0].header["CENTROID"] is True
+        assert np.isclose(hdulist[0].header["TARGRA"], result["ra_deg"])
+
+
+def test_find_find_orb_executable_uses_local_project_pluto_build(
+        tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    exe = home / "Github" / "find_orb" / ".local" / "bin" / "fo"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("FIND_ORB_EXECUTABLE", raising=False)
+    monkeypatch.setattr(cfh12k.shutil, "which", lambda name: None)
+
+    assert cfh12k.find_find_orb_executable() == str(exe.resolve())
+
+
+def test_parse_find_orb_stdout_strips_color_and_extracts_summary():
+    text = (
+        "Processing 1 objects\n"
+        "1: 2025 MH348; \x1b[32ma=43.184,\x1b[0m "
+        "e=0.551, i=44   6 obs\x1b[0m; 2002 June 9 (37.0 min)\n")
+
+    parsed = cfh12k.parse_find_orb_stdout(text)
+
+    assert parsed == {
+        "object": "2025 MH348",
+        "semimajor_axis_au": 43.184,
+        "eccentricity": 0.551,
+        "inclination_deg": 44.0,
+        "observations": 6,
+        "total_observations": 6,
+        "arc": "2002 June 9 (37.0 min)",
+    }
+
+
+def test_parse_find_orb_stdout_extracts_used_and_total_observations():
+    text = (
+        "1: 2025 MH348; \x1b[32ma=29.950,\x1b[0m e=0.049, "
+        "i=29 \x1b[30;47m 22 /  28 obs\x1b[0m; "
+        "2002 June 9-2025 July 24\n")
+
+    parsed = cfh12k.parse_find_orb_stdout(text)
+
+    assert parsed["observations"] == 22
+    assert parsed["total_observations"] == 28
+    assert parsed["arc"] == "2002 June 9-2025 July 24"
+
+
 def test_read_location_records_uses_cutout_chip_shortcut(tmp_path):
     image_dir = tmp_path / "641271p"
     fits_dir = image_dir / "FITS"
@@ -217,7 +321,7 @@ def test_combine_filter_photometry_rewrites_date_filter_paths(tmp_path):
     }]
     destinations = cfh12k.combine_filter_photometry(
         tmp_path, "2025 MH348", outputs)
-    combined_path = Path(destinations[0])
+    combined_path = Path(destinations["files"][0])
 
     assert combined_path.name == "photometry_2025_MH348.dat"
     assert " 2002-06-09/I/cfh12k_i_0001_641271p_chip10.fits " in (
@@ -233,3 +337,60 @@ def test_combine_filter_photometry_rewrites_date_filter_paths(tmp_path):
     assert bundle.observations[0].source_file == fits_path.resolve()
     assert bundle.observations[1].astrometry_only
     assert "COD 568" in bundle.obs80_text
+
+
+def test_combine_filter_photometry_forces_bad_match_to_astrometry_only(
+        tmp_path):
+    filter_dir = tmp_path / "2002-06-09" / "Z"
+    filter_dir.mkdir(parents=True)
+    fits_path = filter_dir / "cfh12k_z_0004_641278p_chip10.fits"
+    header = fits.Header()
+    header["OBSERVER"] = "QSO Team"
+    header["TELESCOP"] = "CFHT 3.6m"
+    header["INSTRUME"] = "CFH12K Mosaic"
+    header["TEL_KEYW"] = "CFHTCFH12K"
+    fits.PrimaryHDU(header=header).writeto(fits_path)
+    photometry_path = filter_dir / "photometry_2025_MH348.dat"
+    photometry_path.write_text(
+        "# header\n"
+        " cfh12k_z_0004_641278p_chip10.fits 2452435.0306800 "
+        "17.3016 0.0284 266.28389404 +4.75916364 -3.06 6.92 "
+        "0.00 0.00 2.00 31.4070 0.0280 -14.1051 0.0048 "
+        "SDSS-R9 z 0 CFHTCFH12K APER 0.90 0.0048 0.0280 "
+        "0.0284 0.0100 0.0100 0.0141 0.0200 0.0200 0.0283 "
+        "0.0224 0.0224 0.0316\n"
+        "# footer\n")
+
+    outputs = [{
+        "relative_dir": "2002-06-09/Z",
+        "photometry_file": str(photometry_path),
+        "target_positions": {
+            "cfh12k_z_0004_641278p_chip10.fits": {
+                "working_name": "cfh12k_z_0004_641278p_chip10.fits",
+                "target_ra_deg": 266.2830442592,
+                "target_dec_deg": 4.7610855897,
+                "position_source": "click_points+centroid",
+            },
+        },
+    }]
+    result = cfh12k.combine_filter_photometry(
+        tmp_path, "2025 MH348", outputs, max_match_residual_arcsec=2.0)
+    combined_path = Path(result["files"][0])
+    row = [
+        line for line in combined_path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ][0].split()
+
+    assert len(result["forced_astrometry_only_rows"]) == 1
+    assert row[2] == "99.0000"
+    assert row[3] == "99.0000"
+    assert row[4] == "266.28304426"
+    assert row[5] == "+4.76108559"
+
+    config = mpcsub.SubmissionConfig(
+        target="2025 MH348", observatory_code="568", output_dir=tmp_path)
+    bundle = mpcsub.build_submission(combined_path, config)
+
+    assert len(bundle.observations) == 1
+    assert bundle.observations[0].astrometry_only
+    assert bundle.observations[0].ra_deg == 266.28304426

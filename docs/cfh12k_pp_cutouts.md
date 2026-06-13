@@ -24,6 +24,29 @@ RA/Dec. Full chip extraction is performed with CFITSIO `imcopy` because this
 dataset has compressed multi-extension files that Astropy can read headers from
 but may fail to decompress fully.
 
+When hand-clicked PNG positions are available, pass the click table:
+
+```bash
+python pptool_cfht_cfh12k.py /path/to/CFHT_CFH12K \
+  --target "2025 MH348" \
+  --click-points-csv /path/to/fits_thumbs_all/click_points.csv
+```
+
+The click table selects only rows marked `clicked`. Each PNG click is scaled
+back into the corresponding FITS cutout, translated through that cutout WCS to
+RA/Dec, projected into the extracted full chip, and locally centroided when a
+positive source can be found near the translated point. The manifest records the
+clicked images, skipped location rows, click-derived coordinates, centroid
+diagnostics, and the final positions written to PP.
+
+PP can still false-match a nearby extracted source when the clicked target is
+too faint for source extraction. CFH12K combination therefore applies a
+`--max-match-residual-arcsec` guard, defaulting to `2 arcsec`. Matches farther
+than this are rewritten in the root combined photometry as active
+astrometry-only rows at the supplied clicked/centroided position. This prevents
+unrelated source photometry from entering MPC/ADES while preserving usable
+manual astrometry.
+
 ## Astrometry-Only Rows
 
 Rows with valid PP measured RA/Dec remain active astrometric observations even
@@ -83,5 +106,9 @@ For the 2025 MH348 CFH12K run, the expected successful artifact set is:
 - `find_orb_runs/2025_MH348/mpc_2025_MH348_cfh12k_only.obs80`,
 - `PP_cutouts` containing 10 FITS cutouts, 10 PNG previews, and 10 JSONL rows.
 
-If a local Find_Orb executable is unavailable, the workflow leaves prepared
-input files and records the missing executable as a manifest warning.
+For orbit checks, the helper first looks for the command-line `fo` executable
+and then `find_orb` on `PATH`, followed by common Project Pluto build paths
+under `~/Github/find_orb` and `~/GitHub/find_orb`. `FIND_ORB_EXECUTABLE` can be
+set to force a specific binary. If no local executable is available, the
+workflow leaves prepared input files and records the missing executable as a
+manifest warning.

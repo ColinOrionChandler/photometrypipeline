@@ -132,6 +132,14 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
         bundle.ades_text)
     assert "<line>Contact: coc123@uw.edu, murtagh@uw.edu</line>" in (
         bundle.ades_xml_text)
+    assert (
+        "! line Small Body Search and Rescue (SBSAR) - http://sbsar.net" in
+        bundle.ades_text)
+    assert (
+        "<line>Small Body Search and Rescue (SBSAR) - http://sbsar.net</line>"
+        in bundle.ades_xml_text)
+    assert "! line COC Photometry Pipeline" in bundle.ades_text
+    assert "<line>COC Photometry Pipeline</line>" in bundle.ades_xml_text
     assert "COD W84" in bundle.obs80_text
     assert "MEA C. O. Chandler, J. Murtagh" in bundle.obs80_text
     mpcsub.write_submission(bundle)
@@ -149,6 +157,8 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
 
 
 def test_validate_ades_xml_text_uses_schema(tmp_path):
+    pytest.importorskip("lxml")
+
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT)
     write_test_fits(tmp_path / "c4d_test.fits")

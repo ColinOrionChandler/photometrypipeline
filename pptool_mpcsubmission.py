@@ -16,6 +16,7 @@ import re
 from typing import Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
+import xml.etree.ElementTree as ET
 
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -41,8 +42,105 @@ DEFAULT_PROGRAM_CODES_URL = (
 DEFAULT_PROGRAM_CODES_CACHE = (
     Path(__file__).resolve().parent / ".cache" / "mpc_program_codes.json"
 )
+DEFAULT_ADES_SCHEMA_URL = (
+    "https://raw.githubusercontent.com/IAU-ADES/ADES-Master/master/"
+    "xsd/submit.xsd"
+)
+DEFAULT_ADES_CATALOG_VALUES_URL = (
+    "https://www.minorplanetcenter.net/iau/info/astCat_photCat.json"
+)
+DEFAULT_ADES_SCHEMA_CACHE = (
+    Path(__file__).resolve().parent / ".cache" / "ades_submit.xsd"
+)
+DEFAULT_ADES_CATALOG_VALUES_CACHE = (
+    Path(__file__).resolve().parent / ".cache" / "astCat_photCat.json"
+)
+ADES_VERSION = "2022"
+VALID_ADES_CATALOGS_FALLBACK = {
+    "Gaia_Int", "PS1_DR2", "PS1_DR1", "ATLAS2", "Gaia3", "Gaia3E",
+    "Gaia2", "Gaia1", "Gaia2016", "URAT1", "UCAC5", "UCAC4", "PPMXL",
+    "NOMAD", "2MASS", "UBSC",
+}
+DEPRECATED_ADES_CATALOGS_FALLBACK = {
+    "UCAC3", "UCAC2", "UCAC1", "USNOB1", "USNOA2", "USNOSA2",
+    "USNOA1", "USNOSA1", "Tyc2", "Tyc1", "Hip2", "Hip1", "ACT",
+    "GSCACT", "GSC2.3", "GSC2.2", "GSC1.2", "GSC1.1", "GSC1.0",
+    "GSC", "SDSS8", "SDSS7", "CMC15", "CMC14", "SSTRC4", "SSTRC1",
+    "MPOSC3", "PPM", "AC", "SAO1984", "SAO", "AGK3", "FK4",
+    "ACRS", "LickGas", "Ida93", "Perth70", "COSMOS", "Yale",
+    "ZZCAT", "IHW", "GZ", "UNK",
+}
+ADES_CATALOG_ALIASES = {
+    "PANSTARRS": "PS1_DR1",
+    "PAN-STARRS": "PS1_DR1",
+    "PANSTARRS1": "PS1_DR1",
+    "PAN-STARRS1": "PS1_DR1",
+}
+NON_CATALOG_PHOTCAT_VALUES = {
+    "forced_photometry", "manual_zp", "manual-zp", "header_zp",
+    "pp_or_header_zp", "PHOT_C", "MAGZP", "SDSS-R9", "SDSS-R13",
+    "SDSS_R9", "SDSS_R13",
+}
 NON_SURVEY_OBSNOTE = "Z"
 NON_SURVEY_OBSNOTE_CODES = {"F51", "F52", "G96", "I41", "703"}
+ADES_XML_FIELD_ORDER = (
+    "permID",
+    "provID",
+    "artSat",
+    "trkSub",
+    "obsSubID",
+    "mode",
+    "stn",
+    "sys",
+    "ctr",
+    "pos1",
+    "pos2",
+    "pos3",
+    "vel1",
+    "vel2",
+    "vel3",
+    "posCov11",
+    "posCov12",
+    "posCov13",
+    "posCov22",
+    "posCov23",
+    "posCov33",
+    "obsTime",
+    "rmsTime",
+    "ra",
+    "dec",
+    "rmsRA",
+    "rmsDec",
+    "rmsCorr",
+    "astCat",
+    "mag",
+    "rmsMag",
+    "band",
+    "fltr",
+    "photCat",
+    "photAp",
+    "logSNR",
+    "seeing",
+    "exp",
+    "rmsFit",
+    "nStars",
+    "disc",
+    "uncTime",
+    "notes",
+    "remarks",
+)
+ADES_XML_CONTEXT_ORDER = (
+    "observatory",
+    "submitter",
+    "observers",
+    "measurers",
+    "telescope",
+    "software",
+    "coinvestigators",
+    "collaborators",
+    "fundingSource",
+    "comment",
+)
 
 PHOTOMETRY_COLUMNS = (
     "catalog_token",
@@ -114,6 +212,7 @@ class PhotometryObservation:
     dec_deg: float
     exptime: float
     phot_cat: str
+    photometry_method: str
     band: str
     instrument: str
     fwhm: float | None
@@ -132,6 +231,10 @@ class PhotometryObservation:
     @property
     def astrometry_only(self) -> bool:
         return self.mag is None or self.mag_sig is None
+
+    @property
+    def photometric_calibration_source(self) -> str:
+        return self.phot_cat
 
 
 @dataclass
@@ -159,9 +262,11 @@ class SubmissionBundle:
     observations: list[PhotometryObservation]
     warnings: list[str]
     ades_text: str
+    ades_xml_text: str
     obs80_text: str
     summary_text: str
     ades_path: Path
+    ades_xml_path: Path
     obs80_path: Path
     summary_path: Path
 
@@ -513,6 +618,7 @@ def make_observation(photometry_file: Path,
         dec_deg=float(row["dec_deg"]),
         exptime=float(row["exptime"]),
         phot_cat=row["phot_cat"],
+        photometry_method=row["photometry_method"],
         band=row["band"] if row["band"] != "-" else "C",
         instrument=row["instrument"],
         fwhm=_float_or_none(row["fwhm"]),
@@ -593,6 +699,111 @@ def _unique_preserve_order(values: Iterable[str]) -> list[str]:
     return unique
 
 
+def _read_cached_json(cache_path: Path) -> object | None:
+    try:
+        if cache_path.exists():
+            return json.loads(cache_path.read_text())
+    except Exception:
+        return None
+    return None
+
+
+def load_ades_catalog_values(
+        cache_path: Path | None = None,
+        refresh: bool = False,
+        url: str = DEFAULT_ADES_CATALOG_VALUES_URL) -> tuple[set[str], set[str]]:
+    """Return current ADES astCat/photCat codes, with a bundled fallback."""
+
+    cache = (cache_path or DEFAULT_ADES_CATALOG_VALUES_CACHE).expanduser()
+    rows = None if refresh else _read_cached_json(cache)
+    if rows is None:
+        try:
+            with urlopen(url, timeout=30) as response:
+                rows = json.load(response)
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
+        except Exception:
+            rows = None
+
+    if not isinstance(rows, list):
+        return set(VALID_ADES_CATALOGS_FALLBACK), set(
+            DEPRECATED_ADES_CATALOGS_FALLBACK)
+
+    active = set()
+    deprecated = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        value = str(row.get("Value") or "").strip()
+        if not value:
+            continue
+        if str(row.get("Deprecated") or "").strip().lower() == "no":
+            active.add(value)
+        else:
+            deprecated.add(value)
+    return active or set(VALID_ADES_CATALOGS_FALLBACK), deprecated
+
+
+def cache_ades_schema(cache_path: Path | None = None,
+                      refresh: bool = False,
+                      url: str = DEFAULT_ADES_SCHEMA_URL) -> Path:
+    """Cache current submit.xsd and return its path."""
+
+    cache = (cache_path or DEFAULT_ADES_SCHEMA_CACHE).expanduser()
+    if cache.exists() and not refresh:
+        return cache
+    with urlopen(url, timeout=30) as response:
+        text = response.read().decode("utf-8")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(text)
+    return cache
+
+
+def normalize_ades_catalog(value: str | None,
+                           active: set[str] | None = None,
+                           deprecated: set[str] | None = None) -> tuple[str, str | None]:
+    """Return an ADES-safe catalog code and optional provenance warning."""
+
+    text = str(value or "").strip()
+    if not text:
+        return "", None
+    active = active or VALID_ADES_CATALOGS_FALLBACK
+    deprecated = deprecated or DEPRECATED_ADES_CATALOGS_FALLBACK
+    mapped = ADES_CATALOG_ALIASES.get(text, ADES_CATALOG_ALIASES.get(
+        text.upper(), text))
+    if mapped in active or mapped in deprecated:
+        warning = None if mapped == text else "%s mapped to %s" % (
+            text, mapped)
+        return mapped, warning
+    return "", "%s is not an ADES astCat/photCat catalog code" % text
+
+
+def _photometry_provenance(obs: PhotometryObservation,
+                           ades_photcat: str) -> list[str]:
+    """Return compact ADES remarks describing non-catalog photometry provenance."""
+
+    remarks = []
+    method = (obs.photometry_method or "").strip()
+    calibration = (obs.photometric_calibration_source or "").strip()
+    if method and method != "APER":
+        method_text = method.lower().replace("_", " ")
+        if method_text == "aper forced":
+            method_text = "forced aperture"
+        remarks.append(method_text)
+    if calibration and calibration != ades_photcat:
+        if calibration == "forced_photometry":
+            if obs.metadata.telescope_keyword == "CFHTCFH12K":
+                remarks.append("zp=CFHT PHOT_C/manual_zp")
+            else:
+                remarks.append("zp=manual/header")
+        elif calibration in {"manual_zp", "manual-zp", "header_zp",
+                             "pp_or_header_zp", "PHOT_C", "MAGZP"}:
+            remarks.append("zp=%s" % calibration)
+        else:
+            remarks.append("PP photCat=%s" % calibration)
+    return remarks
+
+
 def derive_observers(observations: list[PhotometryObservation],
                      config: SubmissionConfig) -> list[str]:
     """Return CLI-supplied observers or unique FITS-header observers."""
@@ -636,6 +847,9 @@ def derive_telescope_context(observations: list[PhotometryObservation]) -> tuple
     if "WHTPFIP" in telescope_keywords or any(
             "William Herschel" in telescope for telescope in telescopes):
         return "4.2-m William Herschel Telescope", "4.2", "CCD"
+    if "CFHTCFH12K" in telescope_keywords or any(
+            "CFHT" in telescope for telescope in telescopes):
+        return "CFHT 3.6m", "3.6", "CCD"
     if "SPACEWATCH09" in telescope_keywords or any(
             "Spacewatch 0.9-m" in telescope for telescope in telescopes):
         return "0.9-m f/3 reflector", "0.9", "CCD"
@@ -643,7 +857,7 @@ def derive_telescope_context(observations: list[PhotometryObservation]) -> tuple
         design = sorted(telescopes)[0]
     else:
         design = "reflector"
-    return design, "0.0", "CCD"
+    return design, "1.0", "CCD"
 
 
 def validate_observations(observations: list[PhotometryObservation],
@@ -746,7 +960,7 @@ def format_ades_psv(observations: list[PhotometryObservation],
     ]
 
     lines = [
-        "# version=2017",
+        "# version=%s" % ADES_VERSION,
         "# observatory",
         "! mpcCode %s" % config.observatory_code,
         "# submitter",
@@ -771,9 +985,15 @@ def format_ades_psv(observations: list[PhotometryObservation],
     ])
 
     prov_id = normalize_target(config.target)
+    active_catalogs, deprecated_catalogs = load_ades_catalog_values()
     for obs in observations:
-        photcat = config.photcat or obs.phot_cat
+        raw_photcat = config.photcat or obs.phot_cat
+        photcat, photcat_warning = normalize_ades_catalog(
+            raw_photcat, active_catalogs, deprecated_catalogs)
         remarks = [obs.source_file.name]
+        remarks.extend(_photometry_provenance(obs, photcat))
+        if photcat_warning and raw_photcat not in NON_CATALOG_PHOTCAT_VALUES:
+            remarks.append(photcat_warning)
         if obs.metadata.propid:
             remarks.append("PROPID=%s" % obs.metadata.propid)
         values = {
@@ -789,8 +1009,8 @@ def format_ades_psv(observations: list[PhotometryObservation],
             "rmsDec": _format_float(obs.dec_tot_sig, 4),
             "astCat": config.astcat,
             "photCat": "" if obs.astrometry_only else photcat,
-            "mag": _format_float(obs.mag, 4),
-            "rmsMag": _format_float(obs.mag_sig, 4),
+            "mag": _format_float(obs.mag, 1),
+            "rmsMag": _format_float(obs.mag_sig, 2),
             "band": "" if obs.astrometry_only else obs.band,
             "exp": _format_float(obs.exptime, 2),
             "seeing": _format_float(obs.fwhm, 2),
@@ -799,6 +1019,183 @@ def format_ades_psv(observations: list[PhotometryObservation],
         }
         lines.append("|".join(_psv_value(values[name]) for name in fieldnames))
     return "\n".join(lines) + "\n"
+
+
+def _parse_psv_table(text: str) -> tuple[list[str], list[dict[str, str]]]:
+    fieldnames = []
+    rows = []
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.lstrip().startswith("!"):
+            continue
+        if "|" not in line:
+            continue
+        values = [value.strip() for value in line.split("|")]
+        if not fieldnames:
+            fieldnames = values
+            continue
+        padded = values + [""] * (len(fieldnames) - len(values))
+        rows.append(dict(zip(fieldnames, padded)))
+    return fieldnames, rows
+
+
+def _parse_psv_context(text: str) -> tuple[str, dict[str, list[tuple[str, str]]]]:
+    version = ADES_VERSION
+    context: dict[str, list[tuple[str, str]]] = {}
+    section = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            directive = stripped[1:].strip()
+            if directive.startswith("version="):
+                version = directive.split("=", 1)[1].strip()
+                section = "version"
+            else:
+                section = directive
+                context.setdefault(section, [])
+            continue
+        if stripped.startswith("!") and section is not None:
+            payload = stripped[1:].strip()
+            parts = payload.split(None, 1)
+            key = parts[0]
+            value = parts[1].strip() if len(parts) > 1 else ""
+            context.setdefault(section, []).append((key, value))
+    return version, context
+
+
+def format_ades_xml_from_psv(text: str) -> str:
+    """Convert generated ADES PSV text to schema-compatible ADES XML."""
+
+    version, context_sections = _parse_psv_context(text)
+    _, rows = _parse_psv_table(text)
+    root = ET.Element("ades", {"version": version})
+    obs_block = ET.SubElement(root, "obsBlock")
+    context = ET.SubElement(obs_block, "obsContext")
+    for section in ADES_XML_CONTEXT_ORDER:
+        entries = context_sections.get(section, [])
+        if not entries:
+            continue
+        if section == "fundingSource":
+            ET.SubElement(context, section).text = entries[0][1]
+            continue
+        section_element = ET.SubElement(context, section)
+        for key, value in entries:
+            ET.SubElement(section_element, key).text = value
+
+    obs_data = ET.SubElement(obs_block, "obsData")
+    for row in rows:
+        optical = ET.SubElement(obs_data, "optical")
+        for field_name in ADES_XML_FIELD_ORDER:
+            value = row.get(field_name, "")
+            if value == "":
+                continue
+            ET.SubElement(optical, field_name).text = value
+    ET.indent(root, space="  ")
+    return ET.tostring(
+        root, encoding="utf-8", xml_declaration=True).decode("utf-8") + "\n"
+
+
+def validate_ades_psv_text(
+        text: str,
+        catalog_values: tuple[set[str], set[str]] | None = None) -> dict[str, list[str]]:
+    """Validate compact ADES PSV rules used by MPC submit.xsd."""
+
+    errors = []
+    warnings = []
+    active_catalogs, deprecated_catalogs = (
+        catalog_values if catalog_values is not None
+        else load_ades_catalog_values())
+
+    version_lines = [
+        line.strip() for line in text.splitlines()
+        if line.strip().startswith("# version=")
+    ]
+    if not version_lines:
+        errors.append("missing # version=%s line" % ADES_VERSION)
+    elif version_lines[0] != "# version=%s" % ADES_VERSION:
+        errors.append("ADES version must be %s, found %s" %
+                      (ADES_VERSION, version_lines[0].split("=", 1)[-1]))
+
+    aperture_lines = [
+        line.strip() for line in text.splitlines()
+        if line.strip().startswith("! aperture")
+    ]
+    if not aperture_lines:
+        errors.append("missing telescope aperture")
+    else:
+        try:
+            aperture = float(aperture_lines[0].split(None, 2)[2])
+        except Exception:
+            aperture = None
+        if aperture is None or aperture <= 0:
+            errors.append("telescope aperture must be positive")
+
+    fieldnames, rows = _parse_psv_table(text)
+    if not fieldnames:
+        errors.append("missing PSV field header")
+        return {"errors": errors, "warnings": warnings}
+
+    cat_pattern = re.compile(r"^[.A-Za-z0-9_]{0,8}$")
+    for row_index, row in enumerate(rows, start=1):
+        astcat = row.get("astCat", "")
+        if not astcat:
+            errors.append("row %d astCat is required" % row_index)
+        elif not cat_pattern.match(astcat):
+            errors.append("row %d astCat has invalid CatType syntax: %s" %
+                          (row_index, astcat))
+        elif astcat not in active_catalogs:
+            if astcat in deprecated_catalogs:
+                warnings.append("row %d astCat is deprecated: %s" %
+                                (row_index, astcat))
+            else:
+                errors.append("row %d astCat is not a current MPC catalog: %s" %
+                              (row_index, astcat))
+
+        photcat = row.get("photCat", "")
+        mag = row.get("mag", "")
+        rms_mag = row.get("rmsMag", "")
+        band = row.get("band", "")
+        if photcat:
+            if not cat_pattern.match(photcat):
+                errors.append(
+                    "row %d photCat has invalid CatType syntax: %s" %
+                    (row_index, photcat))
+            elif photcat not in active_catalogs:
+                if photcat in deprecated_catalogs:
+                    warnings.append("row %d photCat is deprecated: %s" %
+                                    (row_index, photcat))
+                else:
+                    errors.append(
+                        "row %d photCat is not a current MPC catalog: %s" %
+                        (row_index, photcat))
+        if mag or rms_mag or band or photcat:
+            if not mag:
+                errors.append("row %d has photometry fields but no mag" %
+                              row_index)
+            if not band:
+                errors.append("row %d has photometry fields but no band" %
+                              row_index)
+        if rms_mag and not mag:
+            errors.append("row %d has rmsMag without mag" % row_index)
+        if mag:
+            try:
+                mag_value = float(mag)
+            except ValueError:
+                errors.append("row %d mag is not numeric: %s" %
+                              (row_index, mag))
+            else:
+                if mag_value < -5 or mag_value > 35:
+                    errors.append("row %d mag is outside ADES range: %s" %
+                                  (row_index, mag))
+        if row.get("remarks") and "zp=" in row["remarks"] and not photcat:
+            warnings.append(
+                "row %d cites non-catalog photometric provenance in remarks" %
+                row_index)
+
+    return {"errors": errors, "warnings": warnings}
 
 
 def format_80col_observation(obs: PhotometryObservation,
@@ -866,8 +1263,10 @@ def format_obs80(observations: list[PhotometryObservation],
     return "\n".join(lines) + "\n"
 
 
-def output_paths(input_path: Path, config: SubmissionConfig) -> tuple[Path, Path, Path]:
-    """Return ADES, 80-column, and summary paths for a target."""
+def output_paths(
+        input_path: Path,
+        config: SubmissionConfig) -> tuple[Path, Path, Path, Path]:
+    """Return ADES PSV, ADES XML, 80-column, and summary paths."""
 
     if config.output_dir is not None:
         output_dir = config.output_dir.expanduser().resolve()
@@ -879,6 +1278,7 @@ def output_paths(input_path: Path, config: SubmissionConfig) -> tuple[Path, Path
     stem = "mpc_%s" % target_to_filename(config.target)
     return (
         output_dir / ("%s_ADES.psv" % stem),
+        output_dir / ("%s_ADES.xml" % stem),
         output_dir / ("%s_80col.txt" % stem),
         output_dir / ("%s_summary.txt" % stem),
     )
@@ -889,6 +1289,7 @@ def format_summary(input_path: Path,
                    config: SubmissionConfig,
                    warnings: list[str],
                    ades_path: Path,
+                   ades_xml_path: Path,
                    obs80_path: Path,
                    summary_path: Path) -> str:
     """Format a human-readable provenance and warning summary."""
@@ -930,7 +1331,8 @@ def format_summary(input_path: Path,
         "Observers: %s" % (", ".join(observers) if observers else "(none)"),
         "Non-survey measurer/pipeline astrometry: %s" %
         ("yes" if config.non_survey_measurer else "no"),
-        "ADES output: %s" % ades_path,
+        "ADES PSV output: %s" % ades_path,
+        "ADES XML output: %s" % ades_xml_path,
         "80-column output: %s" % obs80_path,
         "Summary output: %s" % summary_path,
         "ADES-only fields not represented in 80-column: %s" %
@@ -954,18 +1356,23 @@ def build_submission(input_path: Path,
     config.prog = resolve_program_code(config, warnings)
     observations = collect_observations(input_path, config, warnings)
     warnings.extend(validate_observations(observations, config))
-    ades_path, obs80_path, summary_path = output_paths(input_path, config)
+    ades_path, ades_xml_path, obs80_path, summary_path = output_paths(
+        input_path, config)
     ades_text = format_ades_psv(observations, config)
+    ades_xml_text = format_ades_xml_from_psv(ades_text)
     obs80_text = format_obs80(observations, config)
     summary_text = format_summary(input_path, observations, config, warnings,
-                                  ades_path, obs80_path, summary_path)
+                                  ades_path, ades_xml_path, obs80_path,
+                                  summary_path)
     return SubmissionBundle(
         observations=observations,
         warnings=warnings,
         ades_text=ades_text,
+        ades_xml_text=ades_xml_text,
         obs80_text=obs80_text,
         summary_text=summary_text,
         ades_path=ades_path,
+        ades_xml_path=ades_xml_path,
         obs80_path=obs80_path,
         summary_path=summary_path,
     )
@@ -974,10 +1381,13 @@ def build_submission(input_path: Path,
 def write_submission(bundle: SubmissionBundle) -> None:
     """Write all companion output files."""
 
-    for path in (bundle.ades_path, bundle.obs80_path, bundle.summary_path):
+    for path in (
+            bundle.ades_path, bundle.ades_xml_path, bundle.obs80_path,
+            bundle.summary_path):
         path.parent.mkdir(parents=True, exist_ok=True)
 
     bundle.ades_path.write_text(bundle.ades_text)
+    bundle.ades_xml_path.write_text(bundle.ades_xml_text)
     bundle.obs80_path.write_text(bundle.obs80_text)
     bundle.summary_path.write_text(bundle.summary_text)
 
@@ -1021,6 +1431,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="turn warnings into hard errors")
     parser.add_argument("--dry-run", action="store_true",
                         help="build and validate output text without writing")
+    parser.add_argument("--validate-ades", action="store_true",
+                        help="run compact current-definition ADES PSV "
+                             "validation on the generated output")
     return parser.parse_args(argv)
 
 
@@ -1045,15 +1458,30 @@ def main(argv: list[str] | None = None) -> int:
         strict=args.strict,
     )
     bundle = build_submission(Path(args.input_path), config)
+    ades_validation = None
+    if args.validate_ades:
+        ades_validation = validate_ades_psv_text(bundle.ades_text)
+        if ades_validation["errors"] and args.strict:
+            raise SubmissionError("; ".join(ades_validation["errors"]))
     if not args.dry_run:
         write_submission(bundle)
 
     action = "Would write" if args.dry_run else "Wrote"
     print("%s %d observations for %s" %
           (action, len(bundle.observations), normalize_target(config.target)))
-    print("ADES: %s" % bundle.ades_path)
+    print("ADES PSV: %s" % bundle.ades_path)
+    print("ADES XML: %s" % bundle.ades_xml_path)
     print("80-column: %s" % bundle.obs80_path)
     print("Summary: %s" % bundle.summary_path)
+    if ades_validation is not None:
+        print("ADES validation errors: %d" %
+              len(ades_validation["errors"]))
+        print("ADES validation warnings: %d" %
+              len(ades_validation["warnings"]))
+        for error in ades_validation["errors"]:
+            print("ADES ERROR: %s" % error)
+        for warning in ades_validation["warnings"]:
+            print("ADES WARNING: %s" % warning)
     for warning in bundle.warnings:
         print("WARNING: %s" % warning)
     return 0

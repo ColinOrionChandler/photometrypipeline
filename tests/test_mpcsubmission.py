@@ -53,6 +53,15 @@ def write_wht_test_fits(path):
     fits.PrimaryHDU(header=header).writeto(path)
 
 
+def write_cfht_cfh12k_test_fits(path):
+    header = fits.Header()
+    header["TELESCOP"] = "CFHT 3.6m"
+    header["INSTRUME"] = "CFH12K Mosaic"
+    header["TEL_KEYW"] = "CFHTCFH12K"
+    header["MAGZP"] = 26.169
+    fits.PrimaryHDU(header=header).writeto(path)
+
+
 def synthetic_obs80_line(tmp_path, *, observatory_code, non_survey_measurer):
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT)
@@ -93,14 +102,25 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     bundle = mpcsub.build_submission(tmp_path, config)
 
     assert len(bundle.observations) == 1
+    assert "# version=2022" in bundle.ades_text
+    assert bundle.ades_xml_text.startswith("<?xml")
+    assert "<ades version=\"2022\">" in bundle.ades_xml_text
+    assert "<provID>2016 CJ155</provID>" in bundle.ades_xml_text
+    assert "<prog>" not in bundle.ades_xml_text
+    assert bundle.ades_xml_path.name == "mpc_2016_CJ155_ADES.xml"
     assert "provID|trkSub|mode|stn|obsTime" in bundle.ades_text
     assert "|2016 CJ155||CCD|W84|" in bundle.ades_text
-    assert "|Gaia2|SDSS-R9|21.3285|0.0877|r|" in bundle.ades_text
+    assert "|Gaia2||21.3|0.09|r|" in bundle.ades_text
+    assert "PP photCat=SDSS-R9" in bundle.ades_text
     assert "! name Beaudin" in bundle.ades_text
     assert "! name C. O. Chandler" in bundle.ades_text
     assert "! name J. Murtagh" in bundle.ades_text
     assert "COD W84" in bundle.obs80_text
     assert "MEA C. O. Chandler, J. Murtagh" in bundle.obs80_text
+    mpcsub.write_submission(bundle)
+    assert bundle.ades_path.exists()
+    assert bundle.ades_xml_path.exists()
+    assert bundle.obs80_path.exists()
 
     obs_lines = [
         line for line in bundle.obs80_text.splitlines()
@@ -109,6 +129,66 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert len(obs_lines) == 1
     assert len(obs_lines[0]) == 80
     assert obs_lines[0].endswith("W84")
+
+
+def test_ades_keeps_valid_photcat_catalog_code(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155", photcat="Gaia2", output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "|Gaia2|Gaia2|21.3|0.09|r|" in bundle.ades_text
+    assert mpcsub.validate_ades_psv_text(
+        bundle.ades_text,
+        catalog_values=({"Gaia2"}, set()))["errors"] == []
+
+
+def test_forced_photometry_uses_remarks_not_photcat(tmp_path):
+    photometry = tmp_path / "photometry_2025_MH348.dat"
+    photometry.write_text(
+        PHOTOMETRY_TEXT.replace("c4d_test", "cfh12k_i")
+        .replace("2016_CJ155", "2025_MH348")
+        .replace("21.3285 0.0877", "23.7504 0.1358")
+        .replace("SDSS-R9 r   0 DECam      APER",
+                 "forced_photometry I 0 CFHTCFH12K APER_FORCED"))
+    write_cfht_cfh12k_test_fits(tmp_path / "cfh12k_i.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2025 MH348", observatory_code="568", prog="c",
+        output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "! aperture 3.6" in bundle.ades_text
+    assert "|Gaia2||23.8|0.14|I|" in bundle.ades_text
+    assert "forced aperture" in bundle.ades_text
+    assert "zp=CFHT PHOT_C/manual_zp" in bundle.ades_text
+    assert "forced_photometry|23.8" not in bundle.ades_text
+    assert mpcsub.validate_ades_psv_text(
+        bundle.ades_text,
+        catalog_values=({"Gaia2"}, set()))["errors"] == []
+
+
+def test_compact_ades_validator_reports_current_schema_errors():
+    text = (
+        "# version=2017\n"
+        "# telescope\n"
+        "! aperture 0.0\n"
+        "permID|provID|mode|stn|obsTime|ra|dec|astCat|photCat|mag|rmsMag|band\n"
+        "|2025 MH348|CCD|568|2002-06-09T12:21:55Z|1|2|Gaia2|"
+        "forced_photometry|23.8|0.14|I\n")
+
+    result = mpcsub.validate_ades_psv_text(
+        text, catalog_values=({"Gaia2"}, set()))
+
+    assert any("version must be 2022" in error
+               for error in result["errors"])
+    assert any("aperture must be positive" in error
+               for error in result["errors"])
+    assert any("photCat has invalid CatType syntax" in error
+               for error in result["errors"])
 
 
 def test_program_code_lookup_prefers_sbsar_csv(tmp_path):
@@ -384,8 +464,11 @@ def test_real_2016_cj155_outputs_both_formats(tmp_path):
 
     assert len(bundle.observations) == 2
     ades_text = bundle.ades_path.read_text()
+    ades_xml_text = bundle.ades_xml_path.read_text()
     obs80_text = bundle.obs80_path.read_text()
     assert "|2016 CJ155||CCD|W84|" in ades_text
+    assert ades_xml_text.startswith("<?xml")
+    assert "<provID>2016 CJ155</provID>" in ades_xml_text
 
     obs_lines = [
         line for line in obs80_text.splitlines()

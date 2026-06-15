@@ -411,6 +411,19 @@ def extract_full_chip(raw_path, working_path, chip_hdu):
     raw_path = Path(raw_path)
     working_path = Path(working_path)
     working_path.parent.mkdir(parents=True, exist_ok=True)
+    if raw_path.suffix.lower() == '.fits':
+        try:
+            with fits.open(str(raw_path), memmap=False,
+                           ignore_missing_end=True) as hdulist:
+                hdu = hdulist[int(chip_hdu)]
+                fits.PrimaryHDU(
+                    data=np.asarray(hdu.data, dtype=np.float32),
+                    header=hdu.header.copy()).writeto(
+                        str(working_path), overwrite=True,
+                        output_verify='silentfix')
+            return working_path
+        except Exception:
+            pass
     command = [
         find_imcopy(),
         '%s[%d]' % (raw_path, int(chip_hdu)),
@@ -1046,6 +1059,7 @@ def build_mpc_outputs(pp_dir, target, observatory_code='568',
         'astrometry_only_observations': sum(
             1 for obs in bundle.observations if obs.astrometry_only),
         'ades_path': str(bundle.ades_path),
+        'ades_xml_path': str(bundle.ades_xml_path),
         'obs80_path': str(bundle.obs80_path),
         'summary_path': str(bundle.summary_path),
         'note': ('Submission sidecars were generated from active PP '
@@ -1056,6 +1070,7 @@ def build_mpc_outputs(pp_dir, target, observatory_code='568',
     return {
         'observations': len(bundle.observations),
         'ades_path': str(bundle.ades_path),
+        'ades_xml_path': str(bundle.ades_xml_path),
         'obs80_path': str(bundle.obs80_path),
         'summary_path': str(bundle.summary_path),
         'submission_manifest_path': str(submission_manifest_path),
@@ -1314,6 +1329,19 @@ def run_single_workflow(args, pp_dir=None, centroid=None, branch_key=None):
             pp_dir, args.target, manifest['mpc_outputs'])
         manifest['warnings'].extend(
             manifest['orbit_check'].get('warnings', []))
+        if args.recover_photometry:
+            from pptool_forced_photometry import build_recovery
+            try:
+                manifest['photometry_recovery'] = build_recovery(
+                    manifest['combined_photometry_files'][0], args.target,
+                    output_dir=(Path(args.photometry_recovery_dir)
+                                if args.photometry_recovery_dir else
+                                pp_dir / 'photometry_recovery'),
+                    reference_catalog=args.photometry_reference_catalog,
+                    snr_threshold=args.photometry_snr_threshold)
+            except Exception as exc:
+                manifest.setdefault('warnings', []).append(
+                    'photometry-only recovery failed: %s' % exc)
         manifest_path = write_manifest(pp_dir, manifest)
         manifest['manifest_path'] = str(manifest_path)
     return manifest
@@ -1333,7 +1361,7 @@ def mirror_selected_branch_outputs(root_pp_dir, selected_manifest, target):
             shutil.copy2(source_path, destination)
             mirrored[key].append(str(destination))
     mpc_outputs = {}
-    for key in ('ades_path', 'obs80_path', 'summary_path',
+    for key in ('ades_path', 'ades_xml_path', 'obs80_path', 'summary_path',
                 'submission_manifest_path'):
         source = selected_manifest.get('mpc_outputs', {}).get(key)
         if not source:
@@ -1491,6 +1519,17 @@ def build_arg_parser():
                              'astrometry-only rows')
     parser.add_argument('--prepare-only', action='store_true',
                         help='write PP-ready FITS/positions but do not run PP')
+    parser.add_argument('--recover-photometry', action='store_true',
+                        help='after PP, run fixed-position forced photometry '
+                             'into photometry_recovery without changing '
+                             'submission astrometry')
+    parser.add_argument('--photometry-recovery-dir',
+                        help='override forced-photometry recovery directory')
+    parser.add_argument('--photometry-reference-catalog',
+                        help='optional CSV reference-star catalog for '
+                             'photometry-only zeropoint fitting')
+    parser.add_argument('--photometry-snr-threshold', type=float, default=5.0,
+                        help='minimum SNR for accepted recovered magnitudes')
     return parser
 
 
@@ -1511,6 +1550,7 @@ def main(argv=None):
             'combined_photometry_files', []),
         'mpc_outputs': manifest.get('mpc_outputs'),
         'orbit_check': manifest.get('orbit_check'),
+        'photometry_recovery': manifest.get('photometry_recovery'),
         'warnings': manifest.get('warnings', []),
     }, indent=2, sort_keys=True))
     return 0

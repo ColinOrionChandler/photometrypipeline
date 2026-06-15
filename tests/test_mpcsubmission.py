@@ -17,6 +17,19 @@ PHOTOMETRY_TEXT = """# header
 PHOTOMETRY_TEXT_ASTROMETRY_ONLY = PHOTOMETRY_TEXT.replace(
     "21.3285 0.0877", "125.1690 99.0000", 1)
 
+PERMISSIVE_ADES_SCHEMA = """<?xml version="1.0"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:element name="ades">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
+      </xsd:sequence>
+      <xsd:attribute name="version" type="xsd:string"/>
+    </xsd:complexType>
+  </xsd:element>
+</xsd:schema>
+"""
+
 
 def write_test_fits(path):
     header = fits.Header()
@@ -115,6 +128,10 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert "! name Beaudin" in bundle.ades_text
     assert "! name C. O. Chandler" in bundle.ades_text
     assert "! name J. Murtagh" in bundle.ades_text
+    assert "! line Contact: coc123@uw.edu, murtagh@uw.edu" in (
+        bundle.ades_text)
+    assert "<line>Contact: coc123@uw.edu, murtagh@uw.edu</line>" in (
+        bundle.ades_xml_text)
     assert "COD W84" in bundle.obs80_text
     assert "MEA C. O. Chandler, J. Murtagh" in bundle.obs80_text
     mpcsub.write_submission(bundle)
@@ -131,6 +148,54 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert obs_lines[0].endswith("W84")
 
 
+def test_validate_ades_xml_text_uses_schema(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+    schema_path = tmp_path / "submit.xsd"
+    schema_path.write_text(PERMISSIVE_ADES_SCHEMA)
+
+    bundle = mpcsub.build_submission(
+        tmp_path,
+        mpcsub.SubmissionConfig(target="2016 CJ155", output_dir=tmp_path),
+    )
+    validation = mpcsub.validate_ades_xml_text(
+        bundle.ades_xml_text,
+        schema_path=schema_path,
+    )
+
+    assert validation["errors"] == []
+    assert validation["warnings"] == []
+    assert mpcsub.validate_ades_xml_text(
+        "not xml",
+        schema_path=schema_path,
+    )["errors"] == ["ADES XML does not start with '<'"]
+
+
+def test_cli_validate_ades_reports_xml_validation(tmp_path, monkeypatch, capsys):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+    schema_path = tmp_path / "submit.xsd"
+    schema_path.write_text(PERMISSIVE_ADES_SCHEMA)
+    monkeypatch.setattr(mpcsub, "cache_ades_schema", lambda: schema_path)
+
+    code = mpcsub.main([
+        str(tmp_path),
+        "--target",
+        "2016 CJ155",
+        "--output-dir",
+        str(tmp_path),
+        "--validate-ades",
+        "--dry-run",
+    ])
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "ADES validation errors: 0" in output
+    assert "ADES XML validation errors: 0" in output
+
+
 def test_ades_keeps_valid_photcat_catalog_code(tmp_path):
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT)
@@ -145,6 +210,20 @@ def test_ades_keeps_valid_photcat_catalog_code(tmp_path):
         bundle.ades_text,
         catalog_values=({"Gaia2"}, {"SDSS8"}))
     assert validation["errors"] == []
+
+
+def test_ades_contact_appends_murtagh_without_duplicate(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        contact="coc123@uw.edu, murtagh@uw.edu",
+        output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert bundle.ades_text.count("murtagh@uw.edu") == 1
 
 
 def test_forced_photometry_uses_remarks_not_photcat(tmp_path):

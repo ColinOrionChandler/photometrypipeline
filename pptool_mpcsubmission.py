@@ -283,21 +283,35 @@ def _program_code_cache_path(config: SubmissionConfig | None = None) -> Path:
     return DEFAULT_PROGRAM_CODES_CACHE
 
 
-def read_sbsar_program_code_map(path: Path | None = None) -> dict[str, str]:
-    """Read the local SBSAR site-code to program-code CSV if available."""
+def read_sbsar_program_code_entries(
+        path: Path | None = None) -> dict[str, dict[str, str]]:
+    """Read local SBSAR site-code program-code rows if available."""
 
     csv_path = (path or DEFAULT_SBSAR_PROGRAM_CODES_CSV).expanduser()
     if not csv_path.exists():
         return {}
     with csv_path.open(newline="", encoding="utf-8-sig") as csv_file:
         reader = csv.DictReader(csv_file)
-        code_map = {}
+        code_map: dict[str, dict[str, str]] = {}
         for row in reader:
             site_code = (row.get("site_code") or "").strip().upper()
             program_code = (row.get("program_code") or "").strip()
+            base62_code = (row.get("base62_code") or "").strip()
             if site_code:
-                code_map[site_code] = program_code
+                code_map[site_code] = {
+                    "program_code": program_code,
+                    "base62_code": base62_code,
+                }
     return code_map
+
+
+def read_sbsar_program_code_map(path: Path | None = None) -> dict[str, str]:
+    """Read the local SBSAR site-code to MPC1992 program-code CSV if available."""
+
+    return {
+        site_code: values["program_code"]
+        for site_code, values in read_sbsar_program_code_entries(path).items()
+    }
 
 
 def _load_program_code_cache(cache_path: Path) -> list[dict[str, object]]:
@@ -354,6 +368,31 @@ def lookup_mpc_program_code(observatory_code: str,
     return None
 
 
+def lookup_mpc_program_code_base62(
+        observatory_code: str,
+        program_code: str | None = None,
+        contact_name: str = DEFAULT_PROGRAM_CODE_CONTACT,
+        cache_path: Path | None = None) -> str | None:
+    """Look up an ADES base62 program code from cached MPC program-code rows."""
+
+    site_code = str(observatory_code).strip().upper()
+    code = str(program_code or "").strip()
+    contact = str(contact_name).strip().casefold()
+    rows = _load_program_code_cache((cache_path or DEFAULT_PROGRAM_CODES_CACHE).expanduser())
+    for row in rows:
+        row_site = str(row.get("observatory_code", "")).strip().upper()
+        if row_site != site_code:
+            continue
+        base62 = str(row.get("program_code_base62", "")).strip()
+        row_code = str(row.get("program_code", "")).strip()
+        row_contact = str(row.get("contact_name", "")).strip().casefold()
+        if code and code in {row_code, base62}:
+            return base62 or None
+        if not code and row_contact == contact:
+            return base62 or None
+    return None
+
+
 def resolve_program_code(config: SubmissionConfig,
                          warnings: list[str] | None = None) -> str | None:
     """Resolve the program code for a submission, preserving explicit input."""
@@ -393,6 +432,36 @@ def resolve_program_code(config: SubmissionConfig,
     warn("no program code found for observatory %s and contact %s" %
          (site_code, config.program_code_contact))
     return None
+
+
+def resolve_ades_program_code(config: SubmissionConfig,
+                              warnings: list[str] | None = None) -> str | None:
+    """Return the ADES base62 prog value while preserving 80-column prog."""
+
+    if not config.prog:
+        return None
+    warn = warnings.append if warnings is not None else (lambda message: None)
+    site_code = str(config.observatory_code).strip().upper()
+    code = str(config.prog).strip()
+    sbsar_entry = read_sbsar_program_code_entries(
+        config.program_codes_sbsar_csv).get(site_code, {})
+    if code == sbsar_entry.get("base62_code"):
+        return code
+    if code == sbsar_entry.get("program_code") and sbsar_entry.get("base62_code"):
+        return sbsar_entry["base62_code"]
+
+    base62 = lookup_mpc_program_code_base62(
+        site_code,
+        program_code=code,
+        contact_name=config.program_code_contact,
+        cache_path=_program_code_cache_path(config),
+    )
+    if base62:
+        return base62
+    if len(code) == 1:
+        warn("could not resolve ADES base62 program code for %s/%s; "
+             "leaving PSV prog unchanged" % (site_code, code))
+    return code
 
 
 def target_to_filename(target: str) -> str:
@@ -968,6 +1037,7 @@ def format_ades_psv(observations: list[PhotometryObservation],
     telescope_design, aperture, detector = derive_telescope_context(observations)
     observers = derive_observers(observations, config)
     measurers = derive_measurers(config)
+    ades_prog = resolve_ades_program_code(config)
     fieldnames = [
         "permID",
         "provID",
@@ -1046,7 +1116,7 @@ def format_ades_psv(observations: list[PhotometryObservation],
             "band": "" if obs.astrometry_only else obs.band,
             "exp": _format_float(obs.exptime, 2),
             "seeing": _format_float(obs.fwhm, 2),
-            "prog": config.prog or "",
+            "prog": ades_prog or "",
             "remarks": "; ".join(remarks),
         }
         lines.append("|".join(_psv_value(values[name]) for name in fieldnames))

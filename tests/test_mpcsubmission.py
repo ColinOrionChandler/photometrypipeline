@@ -274,7 +274,7 @@ def test_compact_ades_validator_reports_current_schema_errors():
 
 def test_program_code_lookup_prefers_sbsar_csv(tmp_path):
     csv_path = tmp_path / "sbsar_program_codes.csv"
-    csv_path.write_text("site_code,program_code\n568,c\n")
+    csv_path.write_text("site_code,program_code,base62_code\n568,c,18\n")
     config = mpcsub.SubmissionConfig(
         target="2025 MH348",
         observatory_code="568",
@@ -283,6 +283,8 @@ def test_program_code_lookup_prefers_sbsar_csv(tmp_path):
     warnings = []
 
     assert mpcsub.resolve_program_code(config, warnings) == "c"
+    config.prog = "c"
+    assert mpcsub.resolve_ades_program_code(config, warnings) == "18"
     assert warnings == []
 
 
@@ -323,7 +325,7 @@ def test_submission_outputs_include_resolved_program_code(tmp_path):
     photometry.write_text(PHOTOMETRY_TEXT.replace("2016_CJ155", "2025_MH348"))
     write_test_fits(tmp_path / "c4d_test.fits")
     csv_path = tmp_path / "sbsar_program_codes.csv"
-    csv_path.write_text("site_code,program_code\n568,c\n")
+    csv_path.write_text("site_code,program_code,base62_code\n568,c,18\n")
 
     config = mpcsub.SubmissionConfig(
         target="2025 MH348",
@@ -332,7 +334,7 @@ def test_submission_outputs_include_resolved_program_code(tmp_path):
         output_dir=tmp_path)
     bundle = mpcsub.build_submission(tmp_path, config)
 
-    assert "|c|" in bundle.ades_text
+    assert "|18|" in bundle.ades_text
     obs_lines = [
         line for line in bundle.obs80_text.splitlines()
         if line.startswith("     K25MY8H")

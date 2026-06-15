@@ -111,6 +111,75 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert obs_lines[0].endswith("W84")
 
 
+def test_program_code_lookup_prefers_sbsar_csv(tmp_path):
+    csv_path = tmp_path / "sbsar_program_codes.csv"
+    csv_path.write_text("site_code,program_code\n568,c\n")
+    config = mpcsub.SubmissionConfig(
+        target="2025 MH348",
+        observatory_code="568",
+        program_codes_sbsar_csv=csv_path,
+        program_codes_cache=tmp_path / "missing_cache.json")
+    warnings = []
+
+    assert mpcsub.resolve_program_code(config, warnings) == "c"
+    assert warnings == []
+
+
+def test_program_code_lookup_uses_mpc_cache_for_punctuation_code(tmp_path):
+    cache_path = tmp_path / "program_codes.json"
+    cache_path.write_text(
+        '{"program_codes": ['
+        '{"observatory_code": "F51", "program_code": "&", '
+        '"contact_name": "C. O. Chandler"}]}')
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        observatory_code="F51",
+        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        program_codes_cache=cache_path)
+
+    assert mpcsub.resolve_program_code(config, []) == "&"
+
+
+def test_program_code_lookup_missing_warns_and_leaves_blank(tmp_path,
+                                                            monkeypatch):
+    def fail_fetch(*args, **kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(mpcsub, "fetch_program_codes", fail_fetch)
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        observatory_code="ZZZ",
+        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        program_codes_cache=tmp_path / "missing_cache.json")
+    warnings = []
+
+    assert mpcsub.resolve_program_code(config, warnings) is None
+    assert any("no program code found" in warning for warning in warnings)
+
+
+def test_submission_outputs_include_resolved_program_code(tmp_path):
+    photometry = tmp_path / "photometry_2025_MH348.dat"
+    photometry.write_text(PHOTOMETRY_TEXT.replace("2016_CJ155", "2025_MH348"))
+    write_test_fits(tmp_path / "c4d_test.fits")
+    csv_path = tmp_path / "sbsar_program_codes.csv"
+    csv_path.write_text("site_code,program_code\n568,c\n")
+
+    config = mpcsub.SubmissionConfig(
+        target="2025 MH348",
+        observatory_code="568",
+        program_codes_sbsar_csv=csv_path,
+        output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "|c|" in bundle.ades_text
+    obs_lines = [
+        line for line in bundle.obs80_text.splitlines()
+        if line.startswith("     K25MY8H")
+    ]
+    assert len(obs_lines) == 1
+    assert obs_lines[0][76] == "c"
+
+
 def test_missing_photometry_row_is_astrometry_only_observation(tmp_path):
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT_ASTROMETRY_ONLY)

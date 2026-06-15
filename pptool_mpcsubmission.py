@@ -5,11 +5,17 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import math
+import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Iterable
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -24,6 +30,17 @@ DEFAULT_MEASURER = "C. O. Chandler, J. Murtagh"
 DEFAULT_OBSERVATORY_CODE = "W84"
 DEFAULT_ACK_SUFFIX = "Small-body Search and Rescue"
 DEFAULT_SUBMITTER = "C. O. Chandler"
+DEFAULT_PROGRAM_CODE_CONTACT = "C. O. Chandler"
+DEFAULT_SBSAR_PROGRAM_CODES_CSV = (
+    Path.home() / "GitHub" / "SBSAR" / "sbsar_program_codes.csv"
+)
+DEFAULT_PROGRAM_CODES_URL = (
+    "https://www.minorplanetcenter.net/static/downloadable-files/"
+    "program_codes.json"
+)
+DEFAULT_PROGRAM_CODES_CACHE = (
+    Path(__file__).resolve().parent / ".cache" / "mpc_program_codes.json"
+)
 NON_SURVEY_OBSNOTE = "Z"
 NON_SURVEY_OBSNOTE_CODES = {"F51", "F52", "G96", "I41", "703"}
 
@@ -128,6 +145,10 @@ class SubmissionConfig:
     contact: str = DEFAULT_CONTACT
     observers: list[str] | None = None
     prog: str | None = None
+    program_code_contact: str = DEFAULT_PROGRAM_CODE_CONTACT
+    program_codes_cache: Path | None = None
+    program_codes_sbsar_csv: Path | None = None
+    refresh_program_codes: bool = False
     non_survey_measurer: bool = False
     output_dir: Path | None = None
     strict: bool = False
@@ -147,6 +168,124 @@ class SubmissionBundle:
 
 class SubmissionError(RuntimeError):
     """Raised when a submission cannot be built safely."""
+
+
+def _program_code_cache_path(config: SubmissionConfig | None = None) -> Path:
+    if config is not None and config.program_codes_cache is not None:
+        return config.program_codes_cache.expanduser()
+    return DEFAULT_PROGRAM_CODES_CACHE
+
+
+def read_sbsar_program_code_map(path: Path | None = None) -> dict[str, str]:
+    """Read the local SBSAR site-code to program-code CSV if available."""
+
+    csv_path = (path or DEFAULT_SBSAR_PROGRAM_CODES_CSV).expanduser()
+    if not csv_path.exists():
+        return {}
+    with csv_path.open(newline="", encoding="utf-8-sig") as csv_file:
+        reader = csv.DictReader(csv_file)
+        code_map = {}
+        for row in reader:
+            site_code = (row.get("site_code") or "").strip().upper()
+            program_code = (row.get("program_code") or "").strip()
+            if site_code:
+                code_map[site_code] = program_code
+    return code_map
+
+
+def _load_program_code_cache(cache_path: Path) -> list[dict[str, object]]:
+    if not cache_path.exists():
+        return []
+    data = json.loads(cache_path.read_text())
+    if isinstance(data, dict) and isinstance(data.get("program_codes"), list):
+        return data["program_codes"]
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def fetch_program_codes(cache_path: Path | None = None,
+                        url: str = DEFAULT_PROGRAM_CODES_URL,
+                        refresh: bool = False) -> list[dict[str, object]]:
+    """Return MPC program-code rows, caching the JSON source locally."""
+
+    cache = (cache_path or DEFAULT_PROGRAM_CODES_CACHE).expanduser()
+    if cache.exists() and not refresh:
+        rows = _load_program_code_cache(cache)
+        if rows:
+            return rows
+
+    with urlopen(url, timeout=30) as response:
+        rows = json.load(response)
+    if not isinstance(rows, list):
+        raise SubmissionError("unexpected MPC program-code JSON structure")
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({
+        "source_url": url,
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "program_codes": rows,
+    }, indent=2, sort_keys=True) + "\n")
+    return rows
+
+
+def lookup_mpc_program_code(observatory_code: str,
+                            contact_name: str = DEFAULT_PROGRAM_CODE_CONTACT,
+                            cache_path: Path | None = None,
+                            refresh: bool = False) -> str | None:
+    """Look up one MPC program code by observatory code and contact name."""
+
+    site_code = str(observatory_code).strip().upper()
+    contact = str(contact_name).strip().casefold()
+    rows = fetch_program_codes(cache_path=cache_path, refresh=refresh)
+    for row in rows:
+        row_site = str(row.get("observatory_code", "")).strip().upper()
+        row_contact = str(row.get("contact_name", "")).strip().casefold()
+        if row_site == site_code and row_contact == contact:
+            code = str(row.get("program_code", "")).strip()
+            return code or None
+    return None
+
+
+def resolve_program_code(config: SubmissionConfig,
+                         warnings: list[str] | None = None) -> str | None:
+    """Resolve the program code for a submission, preserving explicit input."""
+
+    if config.prog:
+        return config.prog
+
+    warn = warnings.append if warnings is not None else (lambda message: None)
+    site_code = str(config.observatory_code).strip().upper()
+    sbsar_map = read_sbsar_program_code_map(config.program_codes_sbsar_csv)
+    if site_code in sbsar_map:
+        code = sbsar_map[site_code].strip()
+        if code:
+            return code
+        warn("local SBSAR program-code row for %s is blank" % site_code)
+
+    try:
+        code = lookup_mpc_program_code(
+            site_code,
+            contact_name=config.program_code_contact,
+            cache_path=_program_code_cache_path(config),
+            refresh=config.refresh_program_codes)
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError,
+            SubmissionError) as exc:
+        warn("could not refresh MPC program-code cache: %s" % exc)
+        try:
+            code = lookup_mpc_program_code(
+                site_code,
+                contact_name=config.program_code_contact,
+                cache_path=_program_code_cache_path(config),
+                refresh=False)
+        except Exception:
+            code = None
+
+    if code:
+        return code
+    warn("no program code found for observatory %s and contact %s" %
+         (site_code, config.program_code_contact))
+    return None
 
 
 def target_to_filename(target: str) -> str:
@@ -786,6 +925,8 @@ def format_summary(input_path: Path,
         "Submitter: %s" % config.submitter,
         "Measurer: %s" % ", ".join(measurers),
         "Contact: %s" % config.contact,
+        "Program code: %s" % (config.prog if config.prog else "(none)"),
+        "Program-code lookup contact: %s" % config.program_code_contact,
         "Observers: %s" % (", ".join(observers) if observers else "(none)"),
         "Non-survey measurer/pipeline astrometry: %s" %
         ("yes" if config.non_survey_measurer else "no"),
@@ -810,6 +951,7 @@ def build_submission(input_path: Path,
     """Build ADES, 80-column, and summary text for a PP output tree."""
 
     warnings = []
+    config.prog = resolve_program_code(config, warnings)
     observations = collect_observations(input_path, config, warnings)
     warnings.extend(validate_observations(observations, config))
     ades_path, obs80_path, summary_path = output_paths(input_path, config)
@@ -858,6 +1000,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="override photometric catalog for all rows")
     parser.add_argument("--prog", help="ADES program code; one character is "
                         "also placed in 80-column output")
+    parser.add_argument("--program-code-contact",
+                        default=DEFAULT_PROGRAM_CODE_CONTACT,
+                        help="contact name used for automatic MPC program "
+                             "code lookup when --prog is not supplied")
+    parser.add_argument("--program-codes-cache", type=Path,
+                        help="local MPC program-code JSON cache path")
+    parser.add_argument("--program-codes-sbsar-csv", type=Path,
+                        help="local SBSAR site/program-code CSV path")
+    parser.add_argument("--refresh-program-codes", action="store_true",
+                        help="refresh the local MPC program-code JSON cache")
     parser.add_argument("--non-survey", "--non-survey-measurer",
                         dest="non_survey_measurer", action="store_true",
                         help="set MPC1992 observation note Z in column 72 for "
@@ -884,6 +1036,10 @@ def main(argv: list[str] | None = None) -> int:
         contact=args.contact,
         observers=args.observers,
         prog=args.prog,
+        program_code_contact=args.program_code_contact,
+        program_codes_cache=args.program_codes_cache,
+        program_codes_sbsar_csv=args.program_codes_sbsar_csv,
+        refresh_program_codes=args.refresh_program_codes,
         non_survey_measurer=args.non_survey_measurer,
         output_dir=args.output_dir,
         strict=args.strict,

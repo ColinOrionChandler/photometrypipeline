@@ -1,6 +1,7 @@
 import csv
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 
 import numpy as np
@@ -186,6 +187,56 @@ def test_parse_find_orb_stdout_extracts_used_and_total_observations():
     assert parsed["observations"] == 22
     assert parsed["total_observations"] == 28
     assert parsed["arc"] == "2002 June 9-2025 July 24"
+
+
+def test_click_solution_mode_both_runs_raw_and_centroid_branches(
+        tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run_single(args, pp_dir=None, centroid=None, branch_key=None):
+        calls.append({
+            "pp_dir": Path(pp_dir),
+            "centroid": centroid,
+            "branch_key": branch_key,
+        })
+        branch_dir = Path(pp_dir)
+        branch_dir.mkdir(parents=True)
+        manifest_path = branch_dir / cfh12k.MANIFEST_NAME
+        manifest_path.write_text("{}\n")
+        return {
+            "pp_dir": str(branch_dir),
+            "manifest_path": str(manifest_path),
+            "click_solution_branch": branch_key,
+            "records": [],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(cfh12k, "run_single_workflow", fake_run_single)
+    args = SimpleNamespace(
+        base_dir=str(tmp_path),
+        target="2025 MH348",
+        pp_dir=str(tmp_path / "PP"),
+        click_points_csv=str(tmp_path / "click_points.csv"),
+        click_solution_mode=cfh12k.CLICK_SOLUTION_BOTH,
+        prepare_only=True,
+    )
+
+    manifest = cfh12k.run_click_branch_workflow(args)
+
+    assert manifest["selected_click_solution_branch"] == "centroid"
+    assert set(manifest["branches"]) == {"centroid", "pure-click"}
+    assert calls == [
+        {
+            "pp_dir": tmp_path / "PP" / "click_centroid",
+            "centroid": True,
+            "branch_key": "centroid",
+        },
+        {
+            "pp_dir": tmp_path / "PP" / "click_raw",
+            "centroid": False,
+            "branch_key": "pure-click",
+        },
+    ]
 
 
 def test_read_location_records_uses_cutout_chip_shortcut(tmp_path):

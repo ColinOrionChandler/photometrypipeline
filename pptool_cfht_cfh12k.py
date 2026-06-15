@@ -31,6 +31,13 @@ DEFAULT_CENTROID_SEARCH_RADIUS = 6.0
 DEFAULT_CENTROID_APERTURE_RADIUS = 3.0
 DEFAULT_CENTROID_MIN_SNR = 1.5
 DEFAULT_MAX_PP_MATCH_RESIDUAL_ARCSEC = 2.0
+CLICK_SOLUTION_CENTROID = 'centroid'
+CLICK_SOLUTION_PURE = 'pure-click'
+CLICK_SOLUTION_BOTH = 'both'
+CLICK_BRANCHES = {
+    CLICK_SOLUTION_CENTROID: ('click_centroid', True),
+    CLICK_SOLUTION_PURE: ('click_raw', False),
+}
 
 
 @contextmanager
@@ -1008,7 +1015,8 @@ def write_positions_by_group(pp_dir, records, target):
     return outputs
 
 
-def build_mpc_outputs(pp_dir, target, observatory_code='568'):
+def build_mpc_outputs(pp_dir, target, observatory_code='568',
+                      program_code_contact=None):
     """Build ADES PSV and MPC 80-column files from combined photometry."""
 
     configure_pp_environment()
@@ -1016,16 +1024,42 @@ def build_mpc_outputs(pp_dir, target, observatory_code='568'):
 
     pp_dir = Path(pp_dir)
     photometry_path = pp_dir / target_photometry_filename(target)
-    config = mpcsub.SubmissionConfig(
-        target=target, observatory_code=str(observatory_code),
-        output_dir=pp_dir)
+    config_kwargs = {
+        'target': target,
+        'observatory_code': str(observatory_code),
+        'output_dir': pp_dir,
+    }
+    if program_code_contact is not None:
+        config_kwargs['program_code_contact'] = program_code_contact
+    config = mpcsub.SubmissionConfig(**config_kwargs)
     bundle = mpcsub.build_submission(photometry_path, config)
     mpcsub.write_submission(bundle)
+    submission_manifest_path = pp_dir / ('mpc_%s_submission_manifest.json' %
+                                         target_to_filename(target))
+    submission_manifest_path.write_text(json.dumps({
+        'target': target,
+        'photometry_file': str(photometry_path),
+        'observatory_code': str(observatory_code),
+        'program_code': config.prog,
+        'program_code_contact': config.program_code_contact,
+        'observations': len(bundle.observations),
+        'astrometry_only_observations': sum(
+            1 for obs in bundle.observations if obs.astrometry_only),
+        'ades_path': str(bundle.ades_path),
+        'obs80_path': str(bundle.obs80_path),
+        'summary_path': str(bundle.summary_path),
+        'note': ('Submission sidecars were generated from active PP '
+                 'photometry rows; for clicked CFH12K workflows the '
+                 'clicked+centroid branch is the preferred submission '
+                 'branch.'),
+    }, indent=2, sort_keys=True) + '\n')
     return {
         'observations': len(bundle.observations),
         'ades_path': str(bundle.ades_path),
         'obs80_path': str(bundle.obs80_path),
         'summary_path': str(bundle.summary_path),
+        'submission_manifest_path': str(submission_manifest_path),
+        'program_code': bundle.observations and config.prog or None,
         'warnings': list(bundle.warnings),
     }
 
@@ -1233,18 +1267,24 @@ def build_workflow(base_dir, target, pp_dir=None,
     return manifest
 
 
-def run_workflow(args):
-    """Execute the full CFH12K PP workflow."""
+def run_single_workflow(args, pp_dir=None, centroid=None, branch_key=None):
+    """Execute one CFH12K PP workflow branch."""
 
+    if pp_dir is None:
+        pp_dir = args.pp_dir
+    if centroid is None:
+        centroid = not args.no_centroid
     manifest = build_workflow(
-        args.base_dir, args.target, pp_dir=args.pp_dir,
+        args.base_dir, args.target, pp_dir=pp_dir,
         magzp_sig=args.magzp_sig,
         click_points_csv=args.click_points_csv,
         click_pixel_origin=args.click_pixel_origin,
-        centroid=not args.no_centroid,
+        centroid=centroid,
         centroid_search_radius=args.centroid_search_radius,
         centroid_aperture_radius=args.centroid_aperture_radius,
         centroid_min_snr=args.centroid_min_snr)
+    if branch_key is not None:
+        manifest['click_solution_branch'] = branch_key
 
     pp_dir = Path(manifest['pp_dir'])
     if not args.prepare_only:
@@ -1268,7 +1308,8 @@ def run_workflow(args):
                              if manifest['combined_photometry_files']
                              else None))
         manifest['mpc_outputs'] = build_mpc_outputs(
-            pp_dir, args.target, observatory_code=args.observatory_code)
+            pp_dir, args.target, observatory_code=args.observatory_code,
+            program_code_contact=args.program_code_contact)
         manifest['orbit_check'] = prepare_orbit_check(
             pp_dir, args.target, manifest['mpc_outputs'])
         manifest['warnings'].extend(
@@ -1276,6 +1317,124 @@ def run_workflow(args):
         manifest_path = write_manifest(pp_dir, manifest)
         manifest['manifest_path'] = str(manifest_path)
     return manifest
+
+
+def mirror_selected_branch_outputs(root_pp_dir, selected_manifest, target):
+    """Copy selected branch products to the PP root default locations."""
+
+    root_pp_dir = Path(root_pp_dir)
+    source_pp_dir = Path(selected_manifest['pp_dir'])
+    mirrored = {}
+    for key in ('combined_photometry_files',):
+        mirrored[key] = []
+        for source in selected_manifest.get(key, []):
+            source_path = Path(source)
+            destination = root_pp_dir / source_path.name
+            shutil.copy2(source_path, destination)
+            mirrored[key].append(str(destination))
+    mpc_outputs = {}
+    for key in ('ades_path', 'obs80_path', 'summary_path',
+                'submission_manifest_path'):
+        source = selected_manifest.get('mpc_outputs', {}).get(key)
+        if not source:
+            continue
+        source_path = Path(source)
+        destination = root_pp_dir / source_path.name
+        shutil.copy2(source_path, destination)
+        mpc_outputs[key] = str(destination)
+    if mpc_outputs:
+        mpc_outputs['observations'] = selected_manifest.get(
+            'mpc_outputs', {}).get('observations')
+        mpc_outputs['program_code'] = selected_manifest.get(
+            'mpc_outputs', {}).get('program_code')
+        mpc_outputs['warnings'] = list(selected_manifest.get(
+            'mpc_outputs', {}).get('warnings', []))
+        mirrored['mpc_outputs'] = mpc_outputs
+
+    note_path = root_pp_dir / ('mpc_%s_submission_manifest.json' %
+                              target_to_filename(target))
+    note = {
+        'target': target,
+        'selected_click_solution_branch': selected_manifest.get(
+            'click_solution_branch'),
+        'selected_pp_dir': str(source_pp_dir),
+        'program_code': selected_manifest.get(
+            'mpc_outputs', {}).get('program_code'),
+        'observations': selected_manifest.get(
+            'mpc_outputs', {}).get('observations'),
+        'note': ('Default submission files were mirrored from the '
+                 'clicked+centroid branch selected for submission and '
+                 'the forced MPFit comparison.'),
+    }
+    note_path.write_text(json.dumps(note, indent=2, sort_keys=True) + '\n')
+    mirrored['submission_manifest'] = str(note_path)
+    return mirrored
+
+
+def write_root_branch_manifest(root_pp_dir, manifest):
+    """Write the root manifest for a multi-branch click workflow."""
+
+    path = Path(root_pp_dir) / MANIFEST_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w') as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write('\n')
+    return path
+
+
+def run_click_branch_workflow(args):
+    """Run one or both click-position solution branches."""
+
+    base_dir = Path(args.base_dir).expanduser().resolve()
+    root_pp_dir = (Path(args.pp_dir).expanduser().resolve()
+                   if args.pp_dir else base_dir / 'PP')
+    root_pp_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.click_solution_mode == CLICK_SOLUTION_BOTH:
+        branch_keys = [CLICK_SOLUTION_CENTROID, CLICK_SOLUTION_PURE]
+    else:
+        branch_keys = [args.click_solution_mode]
+
+    branches = {}
+    for branch_key in branch_keys:
+        branch_dir_name, centroid = CLICK_BRANCHES[branch_key]
+        branch_manifest = run_single_workflow(
+            args, pp_dir=root_pp_dir / branch_dir_name,
+            centroid=centroid, branch_key=branch_key)
+        branches[branch_key] = branch_manifest
+
+    selected = (CLICK_SOLUTION_CENTROID
+                if CLICK_SOLUTION_CENTROID in branches else branch_keys[0])
+    root_manifest = {
+        'workflow': 'cfht_cfh12k_click_branches',
+        'telescope': TELESCOPE_KEY,
+        'target': args.target,
+        'base_dir': str(base_dir),
+        'pp_dir': str(root_pp_dir),
+        'click_solution_mode': args.click_solution_mode,
+        'selected_click_solution_branch': selected,
+        'branches': branches,
+        'warnings': [],
+    }
+    if not args.prepare_only:
+        root_manifest['mirrored_selected_outputs'] = (
+            mirror_selected_branch_outputs(root_pp_dir, branches[selected],
+                                           args.target))
+    manifest_path = write_root_branch_manifest(root_pp_dir, root_manifest)
+    root_manifest['manifest_path'] = str(manifest_path)
+    write_root_branch_manifest(root_pp_dir, root_manifest)
+    return root_manifest
+
+
+def run_workflow(args):
+    """Execute the full CFH12K PP workflow."""
+
+    if args.click_points_csv and args.click_solution_mode in CLICK_BRANCHES:
+        return run_click_branch_workflow(args)
+    if (args.click_points_csv and
+            args.click_solution_mode == CLICK_SOLUTION_BOTH):
+        return run_click_branch_workflow(args)
+    return run_single_workflow(args)
 
 
 def build_arg_parser():
@@ -1296,10 +1455,19 @@ def build_arg_parser():
                         help='PP target rejection schema, e.g. pos or none')
     parser.add_argument('--observatory-code', default='568',
                         help='MPC observatory code for submission files')
+    parser.add_argument('--program-code-contact',
+                        default='C. O. Chandler',
+                        help='MPC program-code contact lookup key')
     parser.add_argument('--click-points-csv',
                         help='clicked PNG positions to translate through '
                              'cutout WCS and use instead of locations CSV '
                              'positions; only clicked rows are processed')
+    parser.add_argument('--click-solution-mode',
+                        choices=(CLICK_SOLUTION_BOTH,
+                                 CLICK_SOLUTION_CENTROID,
+                                 CLICK_SOLUTION_PURE),
+                        default=CLICK_SOLUTION_BOTH,
+                        help='clicked-position branch strategy')
     parser.add_argument('--click-pixel-origin', type=int,
                         default=DEFAULT_CLICK_PIXEL_ORIGIN,
                         help='FITS WCS origin for click coordinates')
@@ -1332,9 +1500,12 @@ def main(argv=None):
     print(json.dumps({
         'manifest_path': manifest['manifest_path'],
         'pp_dir': manifest['pp_dir'],
-        'n_records': len(manifest['records']),
-        'filters': manifest['filters'],
-        'dates': manifest['dates'],
+        'n_records': len(manifest.get('records', [])),
+        'filters': manifest.get('filters', []),
+        'dates': manifest.get('dates', []),
+        'click_solution_mode': manifest.get('click_solution_mode'),
+        'selected_click_solution_branch': manifest.get(
+            'selected_click_solution_branch'),
         'pp_outputs': manifest.get('pp_outputs', []),
         'combined_photometry_files': manifest.get(
             'combined_photometry_files', []),

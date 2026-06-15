@@ -110,8 +110,8 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
     assert bundle.ades_xml_path.name == "mpc_2016_CJ155_ADES.xml"
     assert "provID|trkSub|mode|stn|obsTime" in bundle.ades_text
     assert "|2016 CJ155||CCD|W84|" in bundle.ades_text
-    assert "|Gaia2||21.3|0.09|r|" in bundle.ades_text
-    assert "PP photCat=SDSS-R9" in bundle.ades_text
+    assert "|Gaia2|SDSS8|21.3|0.09|r|" in bundle.ades_text
+    assert "photCal=SDSS9" in bundle.ades_text
     assert "! name Beaudin" in bundle.ades_text
     assert "! name C. O. Chandler" in bundle.ades_text
     assert "! name J. Murtagh" in bundle.ades_text
@@ -141,9 +141,10 @@ def test_ades_keeps_valid_photcat_catalog_code(tmp_path):
     bundle = mpcsub.build_submission(tmp_path, config)
 
     assert "|Gaia2|Gaia2|21.3|0.09|r|" in bundle.ades_text
-    assert mpcsub.validate_ades_psv_text(
+    validation = mpcsub.validate_ades_psv_text(
         bundle.ades_text,
-        catalog_values=({"Gaia2"}, set()))["errors"] == []
+        catalog_values=({"Gaia2"}, {"SDSS8"}))
+    assert validation["errors"] == []
 
 
 def test_forced_photometry_uses_remarks_not_photcat(tmp_path):
@@ -162,13 +163,14 @@ def test_forced_photometry_uses_remarks_not_photcat(tmp_path):
     bundle = mpcsub.build_submission(tmp_path, config)
 
     assert "! aperture 3.6" in bundle.ades_text
-    assert "|Gaia2||23.8|0.14|I|" in bundle.ades_text
+    assert "|Gaia2|SDSS8|23.8|0.14|I|" in bundle.ades_text
     assert "forced aperture" in bundle.ades_text
-    assert "zp=CFHT PHOT_C/manual_zp" in bundle.ades_text
+    assert "photCal=SDSS9" in bundle.ades_text
     assert "forced_photometry|23.8" not in bundle.ades_text
-    assert mpcsub.validate_ades_psv_text(
+    validation = mpcsub.validate_ades_psv_text(
         bundle.ades_text,
-        catalog_values=({"Gaia2"}, set()))["errors"] == []
+        catalog_values=({"Gaia2"}, {"SDSS8"}))
+    assert validation["errors"] == []
 
 
 def test_compact_ades_validator_reports_current_schema_errors():

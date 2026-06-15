@@ -75,11 +75,12 @@ ADES_CATALOG_ALIASES = {
     "PAN-STARRS": "PS1_DR1",
     "PANSTARRS1": "PS1_DR1",
     "PAN-STARRS1": "PS1_DR1",
+    "SDSS-R9": "SDSS8",
+    "SDSS_R9": "SDSS8",
 }
 NON_CATALOG_PHOTCAT_VALUES = {
     "forced_photometry", "manual_zp", "manual-zp", "header_zp",
-    "pp_or_header_zp", "PHOT_C", "MAGZP", "SDSS-R9", "SDSS-R13",
-    "SDSS_R9", "SDSS_R13",
+    "pp_or_header_zp", "PHOT_C", "MAGZP", "SDSS-R13", "SDSS_R13",
 }
 NON_SURVEY_OBSNOTE = "Z"
 NON_SURVEY_OBSNOTE_CODES = {"F51", "F52", "G96", "I41", "703"}
@@ -793,15 +794,32 @@ def _photometry_provenance(obs: PhotometryObservation,
     if calibration and calibration != ades_photcat:
         if calibration == "forced_photometry":
             if obs.metadata.telescope_keyword == "CFHTCFH12K":
-                remarks.append("zp=CFHT PHOT_C/manual_zp")
+                remarks.append("photCal=SDSS9")
             else:
-                remarks.append("zp=manual/header")
+                remarks.append("photCal=manual/header")
+        elif calibration in {"SDSS-R9", "SDSS_R9"}:
+            remarks.append("photCal=SDSS9")
         elif calibration in {"manual_zp", "manual-zp", "header_zp",
                              "pp_or_header_zp", "PHOT_C", "MAGZP"}:
-            remarks.append("zp=%s" % calibration)
+            remarks.append("photCal=%s" % calibration)
         else:
             remarks.append("PP photCat=%s" % calibration)
     return remarks
+
+
+def resolve_ades_photcat(obs: PhotometryObservation,
+                         config: SubmissionConfig,
+                         active: set[str],
+                         deprecated: set[str]) -> tuple[str, str | None]:
+    """Resolve the ADES photCat field for one non-astrometry-only row."""
+
+    if obs.astrometry_only:
+        return "", None
+    raw = config.photcat or obs.phot_cat
+    if (raw == "forced_photometry" and
+            obs.metadata.telescope_keyword == "CFHTCFH12K"):
+        raw = "SDSS-R9"
+    return normalize_ades_catalog(raw, active, deprecated)
 
 
 def derive_observers(observations: list[PhotometryObservation],
@@ -988,10 +1006,11 @@ def format_ades_psv(observations: list[PhotometryObservation],
     active_catalogs, deprecated_catalogs = load_ades_catalog_values()
     for obs in observations:
         raw_photcat = config.photcat or obs.phot_cat
-        photcat, photcat_warning = normalize_ades_catalog(
-            raw_photcat, active_catalogs, deprecated_catalogs)
+        photcat, photcat_warning = resolve_ades_photcat(
+            obs, config, active_catalogs, deprecated_catalogs)
         remarks = [obs.source_file.name]
-        remarks.extend(_photometry_provenance(obs, photcat))
+        if not obs.astrometry_only:
+            remarks.extend(_photometry_provenance(obs, photcat))
         if photcat_warning and raw_photcat not in NON_CATALOG_PHOTCAT_VALUES:
             remarks.append(photcat_warning)
         if obs.metadata.propid:
@@ -1190,7 +1209,8 @@ def validate_ades_psv_text(
                 if mag_value < -5 or mag_value > 35:
                     errors.append("row %d mag is outside ADES range: %s" %
                                   (row_index, mag))
-        if row.get("remarks") and "zp=" in row["remarks"] and not photcat:
+        if (row.get("remarks") and "photCal=" in row["remarks"] and
+                not photcat):
             warnings.append(
                 "row %d cites non-catalog photometric provenance in remarks" %
                 row_index)

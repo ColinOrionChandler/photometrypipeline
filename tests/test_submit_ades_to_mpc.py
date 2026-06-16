@@ -76,6 +76,27 @@ def test_build_curl_args_contains_ack_ac2_prog_and_source(tmp_path):
     assert "source=<%s" % ades_file.resolve() in args
 
 
+def test_obj_type_defaults_and_normalizes_to_mpc_form_values():
+    assert submit_ades.DEFAULT_OBJ_TYPE == "tno"
+    assert submit_ades.normalize_obj_type("TNO") == "tno"
+    assert submit_ades.normalize_obj_type("neo candidate") == "neo candidate"
+    assert submit_ades.normalize_obj_type(" New   Comet ") == "new comet"
+    with pytest.raises(mpcsub.SubmissionError, match="valid options"):
+        submit_ades.normalize_obj_type("centaur")
+
+
+def test_cli_help_lists_obj_types_and_ac2_default(capsys):
+    with pytest.raises(SystemExit):
+        submit_ades.parse_args(["--help"])
+    output = capsys.readouterr().out
+
+    assert "default: tno" in output
+    for obj_type in submit_ades.VALID_OBJ_TYPES:
+        assert obj_type in output
+    assert "default: coc123@uw.edu" in output
+    assert "murtagh@uw.edu" in output
+
+
 def test_submit_ades_dry_run_prints_curl_and_skips_prompt(tmp_path, capsys):
     ades_file = tmp_path / "mpc_2025_MH348_ADES.xml"
     ades_file.write_text(ADES_XML)
@@ -94,6 +115,7 @@ def test_submit_ades_dry_run_prints_curl_and_skips_prompt(tmp_path, capsys):
     assert "Curl command:" in output
     assert "ack=2025 MH348 Small Body Search and Rescue" in output
     assert "ac2=coc123@uw.edu, murtagh@uw.edu" in output
+    assert "obj_type=tno" in output
     assert "prog=18" in output
     assert "Dry run: not submitting." in output
 

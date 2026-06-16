@@ -485,14 +485,19 @@ Functions that provide additional functionality:
    are missing, the validation step falls back to source-measurement
    uncertainties and records the substitution in the summary.
 
-.. function:: pptool_submit_ades_to_mpc (ades_file [--live] [--obj-type string] [--ack string] [--prog string] [--dry-run])
+.. function:: pptool_submit_ades_to_mpc (ades_file [--live] [--obj-type string] [--ac2 string] [--ack string] [--prog string] [--dry-run])
 
    interactively submit a generated ADES XML file to the MPC XML endpoint
 
    :param ades_file: schema-valid ADES XML file to submit
    :param --live: submit to ``https://minorplanetcenter.net/submit_xml``;
                   by default the safer ``submit_xml_test`` endpoint is used
-   :param --obj-type: (optional) MPC ``obj_type`` form value; default: ``NEO``
+   :param --obj-type: (optional) MPC ``obj_type`` form value; default:
+                      ``tno``. Valid options are ``unclassified``, ``neocp``,
+                      ``neo candidate``, ``neo``, ``new comet``, ``comet``,
+                      ``tno``, and ``artsat``
+   :param --ac2: (optional) MPC ``ac2`` form value; default:
+                 ``coc123@uw.edu, murtagh@uw.edu``
    :param --ack: (optional) MPC ``ack`` form value; default:
                  ``<target> Small Body Search and Rescue``
    :param --prog: (optional) explicit base-62 MPC program code form value;

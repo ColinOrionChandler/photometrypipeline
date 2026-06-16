@@ -29,6 +29,17 @@ from pptool_mpcsubmission import (
 
 DEFAULT_TEST_ENDPOINT = "https://minorplanetcenter.net/submit_xml_test"
 DEFAULT_LIVE_ENDPOINT = "https://minorplanetcenter.net/submit_xml"
+DEFAULT_OBJ_TYPE = "tno"
+VALID_OBJ_TYPES = (
+    "unclassified",
+    "neocp",
+    "neo candidate",
+    "neo",
+    "new comet",
+    "comet",
+    "tno",
+    "artsat",
+)
 
 
 @dataclass
@@ -153,9 +164,21 @@ def build_curl_args(endpoint: str,
     ]
 
 
+def normalize_obj_type(obj_type: str) -> str:
+    """Return a valid MPC XML form obj_type value."""
+
+    normalized = " ".join(str(obj_type).strip().lower().split())
+    valid = {value.casefold(): value for value in VALID_OBJ_TYPES}
+    if normalized.casefold() not in valid:
+        raise SubmissionError(
+            "invalid obj_type %r; valid options are: %s" %
+            (obj_type, ", ".join(VALID_OBJ_TYPES)))
+    return valid[normalized.casefold()]
+
+
 def submit_ades_to_mpc(ades_file: Path,
                        endpoint: str,
-                       obj_type: str = "NEO",
+                       obj_type: str = DEFAULT_OBJ_TYPE,
                        ac2: str = DEFAULT_AC2_CONTACTS,
                        ack: str | None = None,
                        target: str | None = None,
@@ -174,6 +197,7 @@ def submit_ades_to_mpc(ades_file: Path,
     submit_target = normalize_target(target or summary.target)
     submit_obscode = observatory_code or summary.observatory_code
     submit_ack = ack or format_ack(submit_target)
+    submit_obj_type = normalize_obj_type(obj_type)
     submit_prog = resolve_submit_prog(
         submit_obscode,
         explicit_prog=prog,
@@ -187,7 +211,7 @@ def submit_ades_to_mpc(ades_file: Path,
         ades_file=ades_path,
         ack=submit_ack,
         ac2=ac2,
-        obj_type=obj_type,
+        obj_type=submit_obj_type,
         prog=submit_prog,
     )
     print("About to submit ADES XML to the MPC.")
@@ -196,7 +220,7 @@ def submit_ades_to_mpc(ades_file: Path,
     print("Observatory code: %s" % submit_obscode)
     print("ACK: %s" % submit_ack)
     print("AC2: %s" % ac2)
-    print("Object type: %s" % obj_type)
+    print("Object type: %s" % submit_obj_type)
     print("prog: %s" % submit_prog)
     print("Endpoint: %s" % endpoint)
     print("Curl command:")
@@ -239,10 +263,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="MPC XML endpoint; defaults to submit_xml_test")
     parser.add_argument("--live", action="store_true",
                         help="use the live submit_xml endpoint")
-    parser.add_argument("--obj-type", default="NEO",
-                        help="MPC obj_type form field; default: NEO")
+    parser.add_argument(
+        "--obj-type",
+        default=DEFAULT_OBJ_TYPE,
+        help=("MPC obj_type form field; default: tno. Valid options: %s" %
+              ", ".join(VALID_OBJ_TYPES)))
     parser.add_argument("--ac2", default=DEFAULT_AC2_CONTACTS,
-                        help="MPC ac2 form field")
+                        help=("MPC ac2 form field; default: %s" %
+                              DEFAULT_AC2_CONTACTS))
     parser.add_argument("--ack",
                         help="MPC ack form field; default is target plus "
                              "Small Body Search and Rescue")

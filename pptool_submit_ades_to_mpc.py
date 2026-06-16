@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -30,6 +32,8 @@ from pptool_mpcsubmission import (
 DEFAULT_TEST_ENDPOINT = "https://minorplanetcenter.net/submit_xml_test"
 DEFAULT_LIVE_ENDPOINT = "https://minorplanetcenter.net/submit_xml"
 DEFAULT_OBJ_TYPE = "tno"
+SUBMISSION_ID_FILENAME = "submission_id.txt"
+SUBMISSION_ID_RE = re.compile(r"Submission ID is\s+([^\s<]+)")
 VALID_OBJ_TYPES = (
     "unclassified",
     "neocp",
@@ -174,6 +178,45 @@ def display_curl_args(curl_args: list[str]) -> list[str]:
     return display_args
 
 
+def endpoint_mode(endpoint: str) -> str:
+    """Return ``test`` or ``live`` for known MPC XML endpoints."""
+
+    if endpoint.rstrip("/") == DEFAULT_TEST_ENDPOINT.rstrip("/"):
+        return "test"
+    if endpoint.rstrip("/") == DEFAULT_LIVE_ENDPOINT.rstrip("/"):
+        return "live"
+    return "custom"
+
+
+def extract_submission_id(response_text: str) -> str | None:
+    """Extract the MPC submission ID from an endpoint response."""
+
+    match = SUBMISSION_ID_RE.search(response_text)
+    return match.group(1) if match else None
+
+
+def append_submission_id_log(log_path: Path,
+                             submission_id: str,
+                             mode: str,
+                             endpoint: str,
+                             ades_filename: str,
+                             ack: str) -> None:
+    """Append one local submission-ID record."""
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    row = "%s\t%s\t%s\t%s\t%s\t%s\n" % (
+        timestamp,
+        mode,
+        submission_id,
+        endpoint,
+        ades_filename,
+        ack,
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(row)
+
+
 def normalize_obj_type(obj_type: str) -> str:
     """Return a valid MPC XML form obj_type value."""
 
@@ -224,7 +267,17 @@ def submit_ades_to_mpc(ades_file: Path,
         obj_type=submit_obj_type,
         prog=submit_prog,
     )
+    mode = endpoint_mode(endpoint)
     print("About to submit ADES XML to the MPC.")
+    if mode == "test":
+        print("MODE: TEST SUBMISSION ONLY - this will post to the MPC "
+              "validation/test endpoint, not the live submission endpoint.")
+    elif mode == "live":
+        print("MODE: LIVE MPC SUBMISSION - this will submit observations to "
+              "the MPC live endpoint.")
+    else:
+        print("MODE: CUSTOM ENDPOINT - verify whether this is test or live "
+              "before submitting.")
     print("ADES file: %s (local path redacted)" % ades_path.name)
     print("Target: %s" % submit_target)
     print("Observatory code: %s" % submit_obscode)
@@ -233,6 +286,7 @@ def submit_ades_to_mpc(ades_file: Path,
     print("Object type: %s" % submit_obj_type)
     print("prog: %s" % submit_prog)
     print("Endpoint: %s" % endpoint)
+    print("Submission ID log: %s" % SUBMISSION_ID_FILENAME)
     print("Curl command:")
     print(shlex.join(display_curl_args(curl_args)))
 
@@ -262,6 +316,22 @@ def submit_ades_to_mpc(ades_file: Path,
     if result.returncode != 0:
         raise SubmissionError("curl exited with status %d" %
                               result.returncode)
+    submission_id = extract_submission_id(result.stdout or "")
+    if submission_id:
+        log_path = ades_path.parent / SUBMISSION_ID_FILENAME
+        append_submission_id_log(
+            log_path=log_path,
+            submission_id=submission_id,
+            mode=mode,
+            endpoint=endpoint,
+            ades_filename=ades_path.name,
+            ack=submit_ack,
+        )
+        print("Recorded %s submission ID %s in %s" %
+              (mode, submission_id, SUBMISSION_ID_FILENAME))
+    else:
+        print("WARNING: no MPC submission ID found in response; "
+              "%s was not updated" % SUBMISSION_ID_FILENAME)
     return result
 
 

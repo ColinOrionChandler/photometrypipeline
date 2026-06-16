@@ -90,6 +90,17 @@ def test_obj_type_defaults_and_normalizes_to_mpc_form_values():
         submit_ades.normalize_obj_type("centaur")
 
 
+def test_endpoint_mode_and_submission_id_parsing():
+    assert submit_ades.endpoint_mode(submit_ades.DEFAULT_TEST_ENDPOINT) == "test"
+    assert submit_ades.endpoint_mode(submit_ades.DEFAULT_LIVE_ENDPOINT) == "live"
+    assert submit_ades.endpoint_mode("https://example.test/submit") == "custom"
+    assert (
+        submit_ades.extract_submission_id(
+            "[ack].  Submission ID is 2026-06-16T00:59:02.791_00000Vl7")
+        == "2026-06-16T00:59:02.791_00000Vl7")
+    assert submit_ades.extract_submission_id("no id here") is None
+
+
 def test_cli_help_lists_obj_types_and_ac2_default(capsys):
     with pytest.raises(SystemExit):
         submit_ades.parse_args(["--help"])
@@ -116,6 +127,7 @@ def test_submit_ades_dry_run_prints_curl_and_skips_prompt(tmp_path, capsys):
     )
     output = capsys.readouterr().out
 
+    assert "MODE: TEST SUBMISSION ONLY" in output
     assert result.returncode == 0
     assert "Curl command:" in output
     assert "ack=2025 MH348 Small Body Search and Rescue" in output
@@ -125,6 +137,32 @@ def test_submit_ades_dry_run_prints_curl_and_skips_prompt(tmp_path, capsys):
     assert "source=<%s" % ades_file.name in output
     assert str(ades_file.resolve()) not in output
     assert "Dry run: not submitting." in output
+
+
+def test_append_submission_id_log(tmp_path):
+    log_path = tmp_path / "submission_id.txt"
+
+    submit_ades.append_submission_id_log(
+        log_path=log_path,
+        submission_id="2026-06-16T00:59:02.791_00000Vl7",
+        mode="test",
+        endpoint=submit_ades.DEFAULT_TEST_ENDPOINT,
+        ades_filename="mpc_2025_MH348_ADES.xml",
+        ack="2025 MH348 Small Body Search and Rescue",
+    )
+    submit_ades.append_submission_id_log(
+        log_path=log_path,
+        submission_id="2026-06-16T01:00:00.000_00000Vl8",
+        mode="live",
+        endpoint=submit_ades.DEFAULT_LIVE_ENDPOINT,
+        ades_filename="mpc_2025_MH348_ADES.xml",
+        ack="2025 MH348 Small Body Search and Rescue",
+    )
+
+    rows = log_path.read_text().splitlines()
+    assert len(rows) == 2
+    assert "\ttest\t2026-06-16T00:59:02.791_00000Vl7\t" in rows[0]
+    assert "\tlive\t2026-06-16T01:00:00.000_00000Vl8\t" in rows[1]
 
 
 def test_submit_ades_requires_literal_submit(tmp_path, monkeypatch):
@@ -152,7 +190,11 @@ def test_submit_ades_executes_curl_after_confirmation(tmp_path, monkeypatch):
 
     def fake_run(args, check, text, capture_output, cwd):
         calls.append((args, cwd))
-        return subprocess.CompletedProcess(args, 0, "accepted\n", "")
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            "[ack].  Submission ID is 2026-06-16T00:59:02.791_00000Vl7\n",
+            "")
 
     monkeypatch.setattr(submit_ades.subprocess, "run", fake_run)
 
@@ -171,3 +213,6 @@ def test_submit_ades_executes_curl_after_confirmation(tmp_path, monkeypatch):
     assert "prog=18" in args
     assert "source=<%s" % ades_file.name in args
     assert str(ades_file.resolve()) not in " ".join(args)
+    log_path = tmp_path / "submission_id.txt"
+    assert log_path.exists()
+    assert "test\t2026-06-16T00:59:02.791_00000Vl7" in log_path.read_text()

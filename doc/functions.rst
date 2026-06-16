@@ -508,9 +508,12 @@ Functions that provide additional functionality:
    The wrapper derives the target and observatory code from the XML, resolves
    the base-62 MPC ``prog`` form field, uses
    ``AC2 coc123@uw.edu, murtagh@uw.edu``, prints the exact ``curl`` command,
-   and requires the user to type ``submit`` before posting. The ``source=<...``
-   argument uses only the XML filename while ``curl`` runs from the file's
-   parent directory; the local path is not part of the ADES submission payload.
+   labels the endpoint as test, live, or custom, and requires the user to type
+   ``submit`` before posting. The ``source=<...`` argument uses only the XML
+   filename while ``curl`` runs from the file's parent directory; the local path
+   is not part of the ADES submission payload. After a successful post, the
+   MPC submission ID is appended to ``submission_id.txt`` next to the XML file,
+   along with UTC timestamp, endpoint mode, endpoint, XML filename, and ACK.
 
 
 .. function:: pptool_catalina_lemmon60 (full_images_dir [--target string] [--impact-summary csv] [--fallback-group integer] [--refresh-backup])

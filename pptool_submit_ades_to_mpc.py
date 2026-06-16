@@ -160,8 +160,18 @@ def build_curl_args(endpoint: str,
         "-F",
         "prog=%s" % prog,
         "-F",
-        "source=<%s" % ades_file.expanduser().resolve(),
+        "source=<%s" % ades_file.name,
     ]
+
+
+def display_curl_args(curl_args: list[str]) -> list[str]:
+    """Return curl args safe to print without exposing local paths."""
+
+    display_args = list(curl_args)
+    for index, value in enumerate(display_args):
+        if value.startswith("source=<") and "/" in value:
+            display_args[index] = "source=<ADES_XML_FILE"
+    return display_args
 
 
 def normalize_obj_type(obj_type: str) -> str:
@@ -215,7 +225,7 @@ def submit_ades_to_mpc(ades_file: Path,
         prog=submit_prog,
     )
     print("About to submit ADES XML to the MPC.")
-    print("ADES file: %s" % ades_path)
+    print("ADES file: %s (local path redacted)" % ades_path.name)
     print("Target: %s" % submit_target)
     print("Observatory code: %s" % submit_obscode)
     print("ACK: %s" % submit_ack)
@@ -224,7 +234,7 @@ def submit_ades_to_mpc(ades_file: Path,
     print("prog: %s" % submit_prog)
     print("Endpoint: %s" % endpoint)
     print("Curl command:")
-    print(shlex.join(curl_args))
+    print(shlex.join(display_curl_args(curl_args)))
 
     if dry_run:
         print("Dry run: not submitting.")
@@ -233,7 +243,7 @@ def submit_ades_to_mpc(ades_file: Path,
     if not assume_yes:
         prompt = (
             'Are you sure you want to submit %s to the MPC? Type "submit" '
-            "to submit. " % ades_path)
+            "to submit. " % ades_path.name)
         if input(prompt).strip() != "submit":
             raise SubmissionError("submission cancelled")
 
@@ -242,6 +252,7 @@ def submit_ades_to_mpc(ades_file: Path,
         check=False,
         text=True,
         capture_output=True,
+        cwd=ades_path.parent,
     )
     if result.stdout:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")

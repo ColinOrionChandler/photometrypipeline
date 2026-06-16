@@ -73,7 +73,12 @@ def test_build_curl_args_contains_ack_ac2_prog_and_source(tmp_path):
     assert "ac2=coc123@uw.edu, murtagh@uw.edu" in args
     assert "prog=18" in args
     assert "obj_type=NEO" in args
-    assert "source=<%s" % ades_file.resolve() in args
+    assert "source=<%s" % ades_file.name in args
+    assert str(ades_file.resolve()) not in " ".join(args)
+
+    display_args = submit_ades.display_curl_args(args)
+    assert "source=<%s" % ades_file.name in display_args
+    assert str(ades_file.resolve()) not in " ".join(display_args)
 
 
 def test_obj_type_defaults_and_normalizes_to_mpc_form_values():
@@ -117,6 +122,8 @@ def test_submit_ades_dry_run_prints_curl_and_skips_prompt(tmp_path, capsys):
     assert "ac2=coc123@uw.edu, murtagh@uw.edu" in output
     assert "obj_type=tno" in output
     assert "prog=18" in output
+    assert "source=<%s" % ades_file.name in output
+    assert str(ades_file.resolve()) not in output
     assert "Dry run: not submitting." in output
 
 
@@ -143,8 +150,8 @@ def test_submit_ades_executes_curl_after_confirmation(tmp_path, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt: "submit")
     calls = []
 
-    def fake_run(args, check, text, capture_output):
-        calls.append(args)
+    def fake_run(args, check, text, capture_output, cwd):
+        calls.append((args, cwd))
         return subprocess.CompletedProcess(args, 0, "accepted\n", "")
 
     monkeypatch.setattr(submit_ades.subprocess, "run", fake_run)
@@ -157,6 +164,10 @@ def test_submit_ades_executes_curl_after_confirmation(tmp_path, monkeypatch):
 
     assert result.returncode == 0
     assert len(calls) == 1
-    assert "ack=2025 MH348 Small Body Search and Rescue" in calls[0]
-    assert "ac2=coc123@uw.edu, murtagh@uw.edu" in calls[0]
-    assert "prog=18" in calls[0]
+    args, cwd = calls[0]
+    assert cwd == ades_file.parent.resolve()
+    assert "ack=2025 MH348 Small Body Search and Rescue" in args
+    assert "ac2=coc123@uw.edu, murtagh@uw.edu" in args
+    assert "prog=18" in args
+    assert "source=<%s" % ades_file.name in args
+    assert str(ades_file.resolve()) not in " ".join(args)

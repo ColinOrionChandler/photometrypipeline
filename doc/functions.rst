@@ -448,7 +448,7 @@ Functions that provide additional functionality:
    :param --submitter: (optional) submitter/contact person name;
                        default: ``C. O. Chandler``
    :param --contact: (optional) contact email address; default:
-                     ``orion@nau.edu``
+                     ``coc123@uw.edu``
    :param --observatory-code: (optional) MPC observatory code; default:
                               ``W84`` for DECam
    :param --astcat: (optional) ADES astrometric catalog identifier;
@@ -478,12 +478,32 @@ Functions that provide additional functionality:
    FITS-provenance fields; the summary file explicitly lists the
    ADES-only values that cannot be represented in the 80-column
    companion file. The default contact is ``coc123@uw.edu``. The 80-column
-   header always includes ``ACK <target> Small-body Search and Rescue`` and
+   header always includes ``ACK <target> Small Body Search and Rescue`` and
    ``AC2 coc123@uw.edu, murtagh@uw.edu``. Comma- or semicolon-separated
    measurer strings are split into individual ADES measurer records and are
    joined on the 80-column ``MEA`` line. When total astrometric uncertainties
    are missing, the validation step falls back to source-measurement
    uncertainties and records the substitution in the summary.
+
+.. function:: pptool_submit_ades_to_mpc (ades_file [--live] [--obj-type string] [--ack string] [--prog string] [--dry-run])
+
+   interactively submit a generated ADES XML file to the MPC XML endpoint
+
+   :param ades_file: schema-valid ADES XML file to submit
+   :param --live: submit to ``https://minorplanetcenter.net/submit_xml``;
+                  by default the safer ``submit_xml_test`` endpoint is used
+   :param --obj-type: (optional) MPC ``obj_type`` form value; default: ``NEO``
+   :param --ack: (optional) MPC ``ack`` form value; default:
+                 ``<target> Small Body Search and Rescue``
+   :param --prog: (optional) explicit base-62 MPC program code form value;
+                  otherwise it is resolved from the XML observatory code and
+                  the ``C. O. Chandler`` program-code lookup key
+   :param --dry-run: (optional) print the curl command without posting
+
+   The wrapper derives the target and observatory code from the XML, resolves
+   the base-62 MPC ``prog`` form field, uses
+   ``AC2 coc123@uw.edu, murtagh@uw.edu``, prints the exact ``curl`` command,
+   and requires the user to type ``submit`` before posting.
 
 
 .. function:: pptool_catalina_lemmon60 (full_images_dir [--target string] [--impact-summary csv] [--fallback-group integer] [--refresh-backup])

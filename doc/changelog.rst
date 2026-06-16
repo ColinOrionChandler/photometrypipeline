@@ -41,6 +41,9 @@ documented here.
   Updated ``pptool_mpcsubmission.py`` defaults for Catalina Lemmon
   submission emails, measurers, ACK text, AC2 contacts, and fallback
   astrometric uncertainty handling.
+  Added ``pptool_submit_ades_to_mpc.py`` for guarded ADES XML endpoint
+  submissions with base-62 program-code lookup, fixed AC2 contacts, and
+  the ``Small Body Search and Rescue`` ACK text.
 
 * 2026-05-29: updated ``pptool_mpcsubmission.py`` FITS-row matching so
   MPC export works when PP truncates long ``catalog_token`` image names

@@ -145,6 +145,7 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
     assert "<line>COC Photometry Pipeline</line>" in bundle.ades_xml_text
     assert "COD W84" in bundle.obs80_text
     assert "MEA C. O. Chandler, J. Murtagh" in bundle.obs80_text
+    assert "ACK 2016 CJ155 Small Body Search and Rescue" in bundle.obs80_text
     mpcsub.write_submission(bundle)
     assert bundle.ades_path.exists()
     assert bundle.ades_xml_path.exists()

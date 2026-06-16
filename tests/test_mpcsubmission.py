@@ -105,13 +105,16 @@ def test_target_filename_and_packed_designation():
         "K16CF5J")
 
 
-def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path):
+def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(mpcsub, "fetch_program_codes", lambda *a, **k: [])
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT)
     write_test_fits(tmp_path / "c4d_test.fits")
 
-    config = mpcsub.SubmissionConfig(target="2016 CJ155",
-                                     output_dir=tmp_path)
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        output_dir=tmp_path)
     bundle = mpcsub.build_submission(tmp_path, config)
 
     assert len(bundle.observations) == 1
@@ -245,13 +248,23 @@ def test_forced_photometry_uses_remarks_not_photcat(tmp_path):
         .replace("SDSS-R9 r   0 DECam      APER",
                  "forced_photometry I 0 CFHTCFH12K APER_FORCED"))
     write_cfht_cfh12k_test_fits(tmp_path / "cfh12k_i.fits")
+    cache_path = tmp_path / "program_codes.json"
+    cache_path.write_text(
+        '{"program_codes": ['
+        '{"observatory_code": "568", "program_code": "c", '
+        '"program_code_base62": "18", '
+        '"contact_name": "C. O. Chandler"}]}')
 
     config = mpcsub.SubmissionConfig(
         target="2025 MH348", observatory_code="568", prog="c",
+        program_codes_cache=cache_path,
+        program_codes_sbsar_csv=tmp_path / "missing.csv",
         output_dir=tmp_path)
     bundle = mpcsub.build_submission(tmp_path, config)
 
     assert "! aperture 3.6" in bundle.ades_text
+    assert "|18|" in bundle.ades_text
+    assert "<prog>" not in bundle.ades_xml_text
     assert "|Gaia2|SDSS8|23.8|0.14|I|" in bundle.ades_text
     assert "forced aperture" in bundle.ades_text
     assert "photCal=SDSS9" in bundle.ades_text
@@ -303,6 +316,7 @@ def test_program_code_lookup_uses_mpc_cache_for_punctuation_code(tmp_path):
     cache_path.write_text(
         '{"program_codes": ['
         '{"observatory_code": "F51", "program_code": "&", '
+        '"program_code_base62": "0F", '
         '"contact_name": "C. O. Chandler"}]}')
     config = mpcsub.SubmissionConfig(
         target="2016 CJ155",
@@ -311,6 +325,8 @@ def test_program_code_lookup_uses_mpc_cache_for_punctuation_code(tmp_path):
         program_codes_cache=cache_path)
 
     assert mpcsub.resolve_program_code(config, []) == "&"
+    config.prog = "&"
+    assert mpcsub.resolve_ades_program_code(config, []) == "0F"
 
 
 def test_program_code_lookup_missing_warns_and_leaves_blank(tmp_path,
@@ -345,6 +361,8 @@ def test_submission_outputs_include_resolved_program_code(tmp_path):
     bundle = mpcsub.build_submission(tmp_path, config)
 
     assert "|18|" in bundle.ades_text
+    assert "<prog>" not in bundle.ades_xml_text
+    assert "ADES prog (base62): 18" in bundle.summary_text
     obs_lines = [
         line for line in bundle.obs80_text.splitlines()
         if line.startswith("     K25MY8H")
@@ -445,6 +463,23 @@ def test_observer_names_use_initials_for_first_last_names(tmp_path):
     assert "! name L. Buckley-Geer" in bundle.ades_text
     assert "! name C. O. Chandler" in bundle.ades_text
     assert "! name J. Q. Public" in bundle.ades_text
+
+
+def test_observer_team_names_stay_unabbreviated(tmp_path):
+    photometry = tmp_path / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        observers=["QSO Team"],
+        output_dir=tmp_path,
+    )
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert "OBS QSO Team" in bundle.obs80_text
+    assert "! name QSO Team" in bundle.ades_text
+    assert "Q. Team" not in bundle.ades_text
 
 
 def test_observer_override_replaces_fits_observers(tmp_path):

@@ -372,13 +372,14 @@ def lookup_mpc_program_code_base62(
         observatory_code: str,
         program_code: str | None = None,
         contact_name: str = DEFAULT_PROGRAM_CODE_CONTACT,
-        cache_path: Path | None = None) -> str | None:
-    """Look up an ADES base62 program code from cached MPC program-code rows."""
+        cache_path: Path | None = None,
+        refresh: bool = False) -> str | None:
+    """Look up an ADES base62 program code from MPC program-code rows."""
 
     site_code = str(observatory_code).strip().upper()
     code = str(program_code or "").strip()
     contact = str(contact_name).strip().casefold()
-    rows = _load_program_code_cache((cache_path or DEFAULT_PROGRAM_CODES_CACHE).expanduser())
+    rows = fetch_program_codes(cache_path=cache_path, refresh=refresh)
     for row in rows:
         row_site = str(row.get("observatory_code", "")).strip().upper()
         if row_site != site_code:
@@ -450,12 +451,19 @@ def resolve_ades_program_code(config: SubmissionConfig,
     if code == sbsar_entry.get("program_code") and sbsar_entry.get("base62_code"):
         return sbsar_entry["base62_code"]
 
-    base62 = lookup_mpc_program_code_base62(
-        site_code,
-        program_code=code,
-        contact_name=config.program_code_contact,
-        cache_path=_program_code_cache_path(config),
-    )
+    try:
+        base62 = lookup_mpc_program_code_base62(
+            site_code,
+            program_code=code,
+            contact_name=config.program_code_contact,
+            cache_path=_program_code_cache_path(config),
+            refresh=config.refresh_program_codes,
+        )
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError,
+            SubmissionError) as exc:
+        warn("could not refresh MPC program-code cache for ADES prog: %s" %
+             exc)
+        base62 = None
     if base62:
         return base62
     if len(code) == 1:
@@ -645,6 +653,8 @@ def _format_observer_name(name: str) -> str:
 
     parts = name.strip().split()
     if len(parts) < 2:
+        return name.strip()
+    if parts[-1].casefold() in {"team", "collaboration", "survey"}:
         return name.strip()
     if all(len(part.rstrip(".")) == 1 for part in parts[:-1]):
         return " ".join(parts)
@@ -1440,7 +1450,8 @@ def format_summary(input_path: Path,
                    ades_path: Path,
                    ades_xml_path: Path,
                    obs80_path: Path,
-                   summary_path: Path) -> str:
+                   summary_path: Path,
+                   ades_prog_values: list[str] | None = None) -> str:
     """Format a human-readable provenance and warning summary."""
 
     observers = derive_observers(observations, config)
@@ -1476,6 +1487,8 @@ def format_summary(input_path: Path,
         "Measurer: %s" % ", ".join(measurers),
         "Contact: %s" % config.contact,
         "Program code: %s" % (config.prog if config.prog else "(none)"),
+        "ADES prog (base62): %s" %
+        (", ".join(ades_prog_values or []) if ades_prog_values else "(none)"),
         "Program-code lookup contact: %s" % config.program_code_contact,
         "Observers: %s" % (", ".join(observers) if observers else "(none)"),
         "Non-survey measurer/pipeline astrometry: %s" %
@@ -1510,9 +1523,12 @@ def build_submission(input_path: Path,
     ades_text = format_ades_psv(observations, config)
     ades_xml_text = format_ades_xml_from_psv(ades_text)
     obs80_text = format_obs80(observations, config)
+    _, ades_rows = _parse_psv_table(ades_text)
+    ades_prog_values = _unique_preserve_order(
+        row.get("prog", "") for row in ades_rows if row.get("prog", ""))
     summary_text = format_summary(input_path, observations, config, warnings,
                                   ades_path, ades_xml_path, obs80_path,
-                                  summary_path)
+                                  summary_path, ades_prog_values)
     return SubmissionBundle(
         observations=observations,
         warnings=warnings,

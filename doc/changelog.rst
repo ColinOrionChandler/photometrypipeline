@@ -4,6 +4,12 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-06-15: ``pptool_mpcsubmission.py`` now snapshots successful
+  MPFit/BandK2000 ``*.obs80`` inputs next to generated ADES and
+  80-column submission files, with a JSON manifest. New solver-specific
+  runs should live under ``orbit_solver_runs/<target>``; older
+  ``find_orb_runs/<target>`` layouts are still scanned for compatibility.
+
 * 2026-06-03: added WHT Prime Focus Imaging Platform documentation for
   CASU reduced products under ``WHTPFIP``. The workflow stages
   target-containing frames into ``PP/<date>/<filter>``, stamps WHT/PFIP

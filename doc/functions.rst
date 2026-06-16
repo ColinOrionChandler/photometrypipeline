@@ -483,7 +483,14 @@ Functions that provide additional functionality:
    measurer strings are split into individual ADES measurer records and are
    joined on the 80-column ``MEA`` line. When total astrometric uncertainties
    are missing, the validation step falls back to source-measurement
-   uncertainties and records the substitution in the summary.
+   uncertainties and records the substitution in the summary. If successful
+   MPFit or BandK2000 run inputs are found under
+   ``orbit_solver_runs/<target>`` near the output directory, the accepted
+   ``*.obs80`` inputs are copied next to the ADES/80-column sidecars as
+   ``mpc_<target>_<solver>_<case>_input.obs80`` and summarized in
+   ``mpc_<target>_orbit_solver_inputs.json``. Existing legacy
+   ``find_orb_runs/<target>`` solver inputs are still recognized so older
+   PP trees can be snapshotted without reshuffling them.
 
 .. function:: pptool_submit_ades_to_mpc (ades_file [--live] [--obj-type string] [--ac2 string] [--ack string] [--prog string] [--dry-run])
 

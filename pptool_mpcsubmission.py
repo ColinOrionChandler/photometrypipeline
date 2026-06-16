@@ -9,6 +9,7 @@ import csv
 import json
 import math
 import os
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -85,6 +86,30 @@ NON_CATALOG_PHOTCAT_VALUES = {
 }
 NON_SURVEY_OBSNOTE = "Z"
 NON_SURVEY_OBSNOTE_CODES = {"F51", "F52", "G96", "I41", "703"}
+ORBIT_SOLVER_INPUT_MANIFEST_SUFFIX = "orbit_solver_inputs.json"
+ORBIT_SOLVER_PARENT_DIRS = ("orbit_solver_runs", "find_orb_runs")
+ORBIT_SOLVER_DIR_SPECS = {
+    "mpfit_runs": {
+        "solver": "MPFit",
+        "slug": "mpfit",
+        "success_suffixes": (".fit", ".abg", ".aei", ".xv"),
+    },
+    "bandk_runs": {
+        "solver": "BandK2000",
+        "slug": "bandk2000",
+        "success_suffixes": (".abg", ".aei", ".fit"),
+    },
+    "bandk2000_runs": {
+        "solver": "BandK2000",
+        "slug": "bandk2000",
+        "success_suffixes": (".abg", ".aei", ".fit"),
+    },
+    "bandk_2000_runs": {
+        "solver": "BandK2000",
+        "slug": "bandk2000",
+        "success_suffixes": (".abg", ".aei", ".fit"),
+    },
+}
 ADES_XML_FIELD_ORDER = (
     "permID",
     "provID",
@@ -271,6 +296,9 @@ class SubmissionBundle:
     ades_xml_path: Path
     obs80_path: Path
     summary_path: Path
+    orbit_solver_input_snapshots: list[dict[str, object]] = field(
+        default_factory=list)
+    orbit_solver_input_manifest_path: Path | None = None
 
 
 class SubmissionError(RuntimeError):
@@ -1443,6 +1471,91 @@ def output_paths(
     )
 
 
+def _slug_for_filename(text: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip()).strip("_")
+    return slug.lower() or "case"
+
+
+def _count_obs80_observations(path: Path) -> int:
+    count = 0
+    for line in path.read_text(errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith((
+                "COD ", "CON ", "OBS ", "MEA ", "TEL ", "NET ", "BND ",
+                "NUM ", "ACK ", "AC2 ")):
+            continue
+        count += 1
+    return count
+
+
+def _solver_success_markers(
+        case_dir: Path, success_suffixes: Iterable[str]) -> list[str]:
+    markers = []
+    for path in sorted(case_dir.iterdir()):
+        if not path.is_file():
+            continue
+        name = path.name.lower()
+        if any(name.endswith(suffix) for suffix in success_suffixes):
+            markers.append(path.name)
+    return markers
+
+
+def discover_orbit_solver_input_snapshots(
+        output_dir: Path, target: str) -> tuple[list[dict[str, object]], Path]:
+    """Find successful MPFit/BandK2000 obs80 inputs near submission outputs."""
+
+    output_dir = output_dir.expanduser().resolve()
+    safe_target = target_to_filename(target)
+    search_roots = _unique_preserve_order([output_dir, output_dir.parent])
+    records: list[dict[str, object]] = []
+    seen_sources: set[Path] = set()
+    used_destinations: set[str] = set()
+    stem = "mpc_%s" % safe_target
+
+    for search_root in search_roots:
+        for parent_name in ORBIT_SOLVER_PARENT_DIRS:
+            orbit_root = search_root / parent_name / safe_target
+            if not orbit_root.exists():
+                continue
+            for solver_root in sorted(path for path in orbit_root.rglob("*")
+                                      if path.is_dir()):
+                spec = ORBIT_SOLVER_DIR_SPECS.get(solver_root.name.lower())
+                if spec is None:
+                    continue
+                for obs80_path in sorted(solver_root.rglob("*.obs80")):
+                    if obs80_path in seen_sources:
+                        continue
+                    case_dir = obs80_path.parent
+                    markers = _solver_success_markers(
+                        case_dir, spec["success_suffixes"])
+                    if not markers:
+                        continue
+                    case_slug = _slug_for_filename(case_dir.name)
+                    destination_name = "%s_%s_%s_input.obs80" % (
+                        stem, spec["slug"], case_slug)
+                    suffix = 2
+                    while destination_name in used_destinations:
+                        destination_name = "%s_%s_%s_%d_input.obs80" % (
+                            stem, spec["slug"], case_slug, suffix)
+                        suffix += 1
+                    seen_sources.add(obs80_path)
+                    used_destinations.add(destination_name)
+                    records.append({
+                        "solver": spec["solver"],
+                        "case": case_dir.name,
+                        "run_tree": parent_name,
+                        "legacy_layout": parent_name == "find_orb_runs",
+                        "source_path": str(obs80_path.resolve()),
+                        "output_path": str(output_dir / destination_name),
+                        "observations": _count_obs80_observations(obs80_path),
+                        "success_markers": markers,
+                    })
+
+    manifest_path = output_dir / (
+        "%s_%s" % (stem, ORBIT_SOLVER_INPUT_MANIFEST_SUFFIX))
+    return records, manifest_path
+
+
 def format_summary(input_path: Path,
                    observations: list[PhotometryObservation],
                    config: SubmissionConfig,
@@ -1451,7 +1564,9 @@ def format_summary(input_path: Path,
                    ades_xml_path: Path,
                    obs80_path: Path,
                    summary_path: Path,
-                   ades_prog_values: list[str] | None = None) -> str:
+                   ades_prog_values: list[str] | None = None,
+                   orbit_solver_input_snapshots:
+                   list[dict[str, object]] | None = None) -> str:
     """Format a human-readable provenance and warning summary."""
 
     observers = derive_observers(observations, config)
@@ -1499,8 +1614,16 @@ def format_summary(input_path: Path,
         "Summary output: %s" % summary_path,
         "ADES-only fields not represented in 80-column: %s" %
         ", ".join(ades_only),
-        "Source FITS files:",
+        "Orbit-solver accepted inputs:",
     ]
+    if orbit_solver_input_snapshots:
+        for snapshot in orbit_solver_input_snapshots:
+            lines.append(
+                "  {solver} {case}: {output_path} ({observations} obs)".
+                format(**snapshot))
+    else:
+        lines.append("  none found")
+    lines.append("Source FITS files:")
     lines.extend("  %s" % source for source in sources)
     lines.append("Warnings:")
     if warnings:
@@ -1526,9 +1649,13 @@ def build_submission(input_path: Path,
     _, ades_rows = _parse_psv_table(ades_text)
     ades_prog_values = _unique_preserve_order(
         row.get("prog", "") for row in ades_rows if row.get("prog", ""))
+    orbit_solver_input_snapshots, orbit_solver_input_manifest_path = (
+        discover_orbit_solver_input_snapshots(
+            obs80_path.parent, config.target))
     summary_text = format_summary(input_path, observations, config, warnings,
                                   ades_path, ades_xml_path, obs80_path,
-                                  summary_path, ades_prog_values)
+                                  summary_path, ades_prog_values,
+                                  orbit_solver_input_snapshots)
     return SubmissionBundle(
         observations=observations,
         warnings=warnings,
@@ -1540,6 +1667,8 @@ def build_submission(input_path: Path,
         ades_xml_path=ades_xml_path,
         obs80_path=obs80_path,
         summary_path=summary_path,
+        orbit_solver_input_snapshots=orbit_solver_input_snapshots,
+        orbit_solver_input_manifest_path=orbit_solver_input_manifest_path,
     )
 
 
@@ -1555,6 +1684,21 @@ def write_submission(bundle: SubmissionBundle) -> None:
     bundle.ades_xml_path.write_text(bundle.ades_xml_text)
     bundle.obs80_path.write_text(bundle.obs80_text)
     bundle.summary_path.write_text(bundle.summary_text)
+    if bundle.orbit_solver_input_snapshots:
+        for snapshot in bundle.orbit_solver_input_snapshots:
+            source_path = Path(str(snapshot["source_path"]))
+            output_path = Path(str(snapshot["output_path"]))
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            if source_path.resolve() != output_path.resolve():
+                shutil.copy2(source_path, output_path)
+        if bundle.orbit_solver_input_manifest_path is not None:
+            bundle.orbit_solver_input_manifest_path.write_text(json.dumps({
+                "description": (
+                    "MPC 80-column inputs that successfully went through "
+                    "local orbit solvers and were snapshotted with the "
+                    "submission sidecars."),
+                "inputs": bundle.orbit_solver_input_snapshots,
+            }, indent=2, sort_keys=True) + "\n")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1642,6 +1786,12 @@ def main(argv: list[str] | None = None) -> int:
     print("ADES XML: %s" % bundle.ades_xml_path)
     print("80-column: %s" % bundle.obs80_path)
     print("Summary: %s" % bundle.summary_path)
+    if bundle.orbit_solver_input_snapshots:
+        print("Orbit-solver accepted inputs: %d" %
+              len(bundle.orbit_solver_input_snapshots))
+        if bundle.orbit_solver_input_manifest_path is not None:
+            print("Orbit-solver input manifest: %s" %
+                  bundle.orbit_solver_input_manifest_path)
     if ades_validation is not None:
         print("ADES validation errors: %d" %
               len(ades_validation["errors"]))

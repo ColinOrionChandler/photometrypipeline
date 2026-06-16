@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,46 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
     assert len(obs_lines) == 1
     assert len(obs_lines[0]) == 80
     assert obs_lines[0].endswith("W84")
+
+
+def test_submission_snapshots_successful_mpfit_input_next_to_outputs(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(mpcsub, "fetch_program_codes", lambda *a, **k: [])
+    output_dir = tmp_path / "submission"
+    output_dir.mkdir()
+    photometry = output_dir / "photometry_2016_CJ155.dat"
+    photometry.write_text(PHOTOMETRY_TEXT)
+    write_test_fits(output_dir / "c4d_test.fits")
+    mpfit_case = (
+        tmp_path / "orbit_solver_runs" / "2016_CJ155" / "mpfit_runs" /
+        "with_cfh12k")
+    mpfit_case.mkdir(parents=True)
+    solver_input = mpfit_case / "mpc_observations_plus_cfh12k.obs80"
+    solver_input.write_text(
+        "COD W84\n"
+        "     K16CF5J  C2016 01 11.28995144 09 36 41.820+13 55 01.86"
+        "         21.3 r      W84\n")
+    (mpfit_case / "2016_cj155_with_cfh12k_mpfit.fit").write_text(
+        "success\n")
+
+    config = mpcsub.SubmissionConfig(
+        target="2016 CJ155",
+        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        output_dir=output_dir)
+    bundle = mpcsub.build_submission(output_dir, config)
+    mpcsub.write_submission(bundle)
+
+    snapshot = output_dir / "mpc_2016_CJ155_mpfit_with_cfh12k_input.obs80"
+    manifest = output_dir / "mpc_2016_CJ155_orbit_solver_inputs.json"
+    assert snapshot.read_text() == solver_input.read_text()
+    assert "MPFit with_cfh12k" in bundle.summary_text
+    data = json.loads(manifest.read_text())
+    assert data["inputs"][0]["solver"] == "MPFit"
+    assert data["inputs"][0]["case"] == "with_cfh12k"
+    assert data["inputs"][0]["run_tree"] == "orbit_solver_runs"
+    assert data["inputs"][0]["legacy_layout"] is False
+    assert data["inputs"][0]["output_path"] == str(snapshot)
+    assert data["inputs"][0]["observations"] == 1
 
 
 def test_validate_ades_xml_text_uses_schema(tmp_path):

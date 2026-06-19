@@ -122,5 +122,58 @@ def test_builds_side_by_side_and_blink_gif(tmp_path):
     assert row["output_compare_png"] and row["output_blink_gif"]
 
 
+def test_ps1_survey_uses_independent_backend_and_named_dir(tmp_path):
+    positions = tmp_path / "report.csv"
+    positions.write_text("ra_deg,dec_deg\n301.378,-15.812\n", encoding="utf-8")
+
+    table = (
+        "projcell subcell ra dec filter mjd type filename shortname\n"
+        "1234 056 301.378 -15.812 g 55000 stack /rings/g.stk.fits g\n"
+        "1234 056 301.378 -15.812 i 55000 stack /rings/i.stk.fits i\n"
+        "1234 056 301.378 -15.812 z 55000 stack /rings/z.stk.fits z\n"
+    )
+
+    seen = []
+
+    def fake_fetch(url, timeout=60):
+        seen.append(url)
+        if "ps1filenames" in url:
+            return table.encode()
+        if "format=fits" in url:
+            return _fits_bytes(value=7.0)
+        return b"jpgdata"
+
+    result = ref.build_reference_cutouts(
+        tmp_path, "2025 NN80", positions=positions, survey="ps1",
+        position_source="sbsar_centroid", fetcher=fake_fetch)
+
+    # PS1 gets its own survey-named subdir, distinct from the Legacy default
+    assert Path(result["output_dir"]) == tmp_path / "reference_cutouts_ps1_sbsar_centroid"
+    assert result["survey"] == "ps1"
+    assert result["n_cutouts"] == 1
+    assert any("ps1images.stsci.edu" in u for u in seen)   # independent service
+    rows = [json.loads(line) for line in
+            (Path(result["output_dir"]) / "reference_cutouts.jsonl")
+            .read_text().splitlines()]
+    assert rows[0]["survey"] == "ps1"
+    assert "fitscut.cgi" in rows[0]["fits_url"] and "red=" in rows[0]["fits_url"]
+    assert len(list(Path(result["output_dir"]).glob("*_ref.fits"))) == 1
+
+
+def test_ps1_no_coverage_flagged(tmp_path):
+    positions = tmp_path / "report.csv"
+    positions.write_text("ra_deg,dec_deg\n10.0,80.0\n", encoding="utf-8")
+
+    def fake_fetch(url, timeout=60):
+        if "ps1filenames" in url:
+            return b"projcell subcell ra dec filter mjd type filename shortname\n"
+        return b"jpgdata"
+
+    result = ref.build_reference_cutouts(tmp_path, "2025 NN80",
+                                         positions=positions, survey="ps1",
+                                         fetcher=fake_fetch)
+    assert any("no coverage" in w for w in result["warnings"])
+
+
 def Path_exists(p):
     return Path(p).exists()

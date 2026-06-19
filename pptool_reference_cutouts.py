@@ -69,10 +69,111 @@ def legacy_cutout_url(ra_deg, dec_deg, kind, layer=DEFAULT_LAYER,
     return "%s/cutout.%s?%s" % (LEGACY_BASE_URL, kind, urlencode(params))
 
 
+PS1_FILENAMES_URL = "https://ps1images.stsci.edu/cgi-bin/ps1filenames.py"
+PS1_FITSCUT_URL = "https://ps1images.stsci.edu/cgi-bin/fitscut.cgi"
+PS1_PIXSCALE = 0.25               # arcsec/pixel (Pan-STARRS1)
+SURVEY_CHOICES = ("ls-dr10", "ls-dr9", "ps1")
+
+
 def _http_get(url, timeout=60):
     request = Request(url, headers={"User-Agent": _USER_AGENT})
     with urlopen(request, timeout=timeout) as response:
         return response.read()
+
+
+def survey_label(survey):
+    return "PS1" if survey == "ps1" else "Legacy Surveys"
+
+
+def _ps1_filename_table(ra_deg, dec_deg, filters, fetcher):
+    """Map filter -> PS1 stack image filename for a position (empty if no cover)."""
+
+    url = "%s?ra=%.7f&dec=%.7f&filters=%s&type=stack" % (
+        PS1_FILENAMES_URL, float(ra_deg), float(dec_deg), filters)
+    raw = fetcher(url)
+    text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    by_filter = {}
+    if len(lines) >= 2:
+        header = lines[0].split()
+        try:
+            fi, ni = header.index("filter"), header.index("filename")
+        except ValueError:
+            fi, ni = None, None
+        if fi is not None:
+            for line in lines[1:]:
+                cols = line.split()
+                if len(cols) > max(fi, ni):
+                    by_filter[cols[fi]] = cols[ni]
+    return by_filter, url
+
+
+def _ps1_fetch(ra_deg, dec_deg, size_arcsec, bands, fetcher):
+    """Fetch a Pan-STARRS1 stack cutout (deep, independent of DECam/LS)."""
+
+    size_px = size_pixels(size_arcsec, PS1_PIXSCALE)
+    errors = []
+    by_filter = {}
+    try:
+        by_filter, _ = _ps1_filename_table(ra_deg, dec_deg, "grizy", fetcher)
+    except Exception as exc:
+        errors.append("ps1 filename lookup: %s" % exc)
+    if not by_filter and not errors:
+        errors.append("ps1: no stack image at this position (no coverage)")
+
+    def fitscut(kind, **extra):
+        params = {"ra": "%.7f" % float(ra_deg), "dec": "%.7f" % float(dec_deg),
+                  "size": size_px, "format": kind}
+        params.update(extra)
+        return "%s?%s" % (PS1_FITSCUT_URL, urlencode(params))
+
+    fits_url = fits_bytes = None
+    if by_filter.get("g"):
+        fits_url = fitscut("fits", red=by_filter["g"])
+        try:
+            fits_bytes = fetcher(fits_url)
+        except Exception as exc:
+            errors.append("ps1 fits: %s" % exc)
+
+    jpg_url = jpg_bytes = None
+    trio = [by_filter.get(f) for f in ("z", "i", "g")]
+    if all(trio):
+        jpg_url = fitscut("jpeg", red=trio[0], green=trio[1], blue=trio[2],
+                          autoscale="99.5")
+    elif by_filter.get("g"):
+        jpg_url = fitscut("jpeg", red=by_filter["g"])
+    if jpg_url:
+        try:
+            jpg_bytes = fetcher(jpg_url)
+        except Exception as exc:
+            errors.append("ps1 jpg: %s" % exc)
+
+    return {"jpg_bytes": jpg_bytes, "fits_bytes": fits_bytes,
+            "jpg_url": jpg_url, "fits_url": fits_url, "errors": errors}
+
+
+def fetch_survey_cutout(survey, ra_deg, dec_deg, size_arcsec, pixscale, bands,
+                        fetcher):
+    """Fetch (jpg_bytes, fits_bytes, urls, errors) for a survey backend."""
+
+    if survey == "ps1":
+        return _ps1_fetch(ra_deg, dec_deg, size_arcsec, bands, fetcher)
+    jpg_url = legacy_cutout_url(ra_deg, dec_deg, "jpg", survey, pixscale,
+                                size_arcsec, bands)
+    fits_url = legacy_cutout_url(ra_deg, dec_deg, "fits", survey, pixscale,
+                                 size_arcsec, bands)
+    errors = []
+    jpg_bytes = fits_bytes = None
+    try:
+        jpg_bytes = fetcher(jpg_url)
+    except Exception as exc:
+        errors.append("jpg: %s" % exc)
+    try:
+        fits_bytes = fetcher(fits_url)
+    except Exception as exc:
+        errors.append("fits: %s" % exc)
+    return {"jpg_bytes": jpg_bytes, "fits_bytes": fits_bytes,
+            "jpg_url": jpg_url, "fits_url": fits_url, "errors": errors}
 
 
 def _coverage_from_fits(fits_bytes):
@@ -244,18 +345,30 @@ def _specs(pp_root, target, positions, photometry_file, position_column):
 def build_reference_cutouts(pp_root, target, positions=None,
                             photometry_file=None, output_dir=None,
                             position_source=None, position_column="auto",
-                            layer=DEFAULT_LAYER, size_arcsec=DEFAULT_SIZE_ARCSEC,
+                            survey=None, layer=DEFAULT_LAYER,
+                            size_arcsec=DEFAULT_SIZE_ARCSEC,
                             pixscale=DEFAULT_PIXSCALE, bands=DEFAULT_BANDS,
                             make_comparisons=False,
                             blink_interval_ms=DEFAULT_BLINK_INTERVAL_MS,
                             fetcher=_http_get):
-    """Download Legacy Surveys reference cutouts for each reported position."""
+    """Download deep reference cutouts for each reported position.
 
+    ``survey`` selects the backend: a Legacy Surveys layer (``ls-dr10`` default,
+    which shares DECam lineage with PP's own data) or ``ps1`` for an independent
+    Pan-STARRS1 stack.  Non-default surveys get their own
+    ``reference_cutouts_<survey>[_<position_source>]`` directory so survey sets
+    never clobber one another.
+    """
+
+    survey = survey or layer or DEFAULT_LAYER
+    label = survey_label(survey)
     pp_root = Path(pp_root).expanduser().resolve()
     if output_dir is None:
         name = OUTPUT_BASENAME
+        if survey != DEFAULT_LAYER:
+            name = "%s_%s" % (name, _sanitize_label(survey))
         if position_source:
-            name = "%s_%s" % (OUTPUT_BASENAME, _sanitize_label(position_source))
+            name = "%s_%s" % (name, _sanitize_label(position_source))
         output_dir = pp_root / name
     else:
         output_dir = Path(output_dir).expanduser().resolve()
@@ -274,32 +387,29 @@ def build_reference_cutouts(pp_root, target, positions=None,
         if ra is None or dec is None:
             continue
         stem = _output_stem(target, spec)
-        jpg_url = legacy_cutout_url(ra, dec, "jpg", layer, pixscale,
-                                    size_arcsec, bands)
-        fits_url = legacy_cutout_url(ra, dec, "fits", layer, pixscale,
-                                     size_arcsec, bands)
+        fetched = fetch_survey_cutout(survey, ra, dec, size_arcsec, pixscale,
+                                      bands, fetcher)
+        jpg_url, fits_url = fetched["jpg_url"], fetched["fits_url"]
+        errors = list(fetched["errors"])
         out_jpg = output_dir / ("%s_ref.jpg" % stem)
+        if fetched["jpg_bytes"] is not None:
+            out_jpg.write_bytes(fetched["jpg_bytes"])
+        else:
+            out_jpg = None
         out_fits = output_dir / ("%s_ref.fits" % stem)
         has_coverage = None
         finite_fraction = None
-        errors = []
-        try:
-            out_jpg.write_bytes(fetcher(jpg_url))
-        except Exception as exc:
-            errors.append("jpg: %s" % exc)
-            out_jpg = None
-        try:
-            fits_bytes = fetcher(fits_url)
-            out_fits.write_bytes(fits_bytes)
-            has_coverage, finite_fraction = _coverage_from_fits(fits_bytes)
-        except Exception as exc:
-            errors.append("fits: %s" % exc)
+        if fetched["fits_bytes"] is not None:
+            out_fits.write_bytes(fetched["fits_bytes"])
+            has_coverage, finite_fraction = _coverage_from_fits(
+                fetched["fits_bytes"])
+        else:
             out_fits = None
         if errors:
             warnings.append("%s: %s" % (stem, "; ".join(errors)))
         if has_coverage is False:
-            warnings.append("%s: no Legacy Surveys coverage at %.5f %.5f" %
-                            (stem, ra, dec))
+            warnings.append("%s: no %s coverage at %.5f %.5f" %
+                            (stem, label, ra, dec))
         out_compare = None
         out_blink = None
         if make_comparisons and out_fits is not None:
@@ -312,7 +422,7 @@ def build_reference_cutouts(pp_root, target, positions=None,
                         source_fits, out_fits,
                         output_dir / ("%s_compare.png" % stem),
                         output_dir / ("%s_blink.gif" % stem),
-                        our_label=target, ref_label=layer,
+                        our_label=target, ref_label=survey,
                         interval_ms=blink_interval_ms)
                     out_compare = products["side_by_side_png"]
                     out_blink = products["blink_gif"]
@@ -323,7 +433,8 @@ def build_reference_cutouts(pp_root, target, positions=None,
             "index": len(manifest_rows) + 1,
             "target": target,
             "position_source": position_source,
-            "layer": layer,
+            "survey": survey,
+            "layer": survey,
             "ra_deg": ra,
             "dec_deg": dec,
             "julian_date": _float_or_none(spec.get("julian_date")),
@@ -348,7 +459,8 @@ def build_reference_cutouts(pp_root, target, positions=None,
     return {
         "output_dir": str(output_dir),
         "manifest_path": str(manifest_path),
-        "layer": layer,
+        "survey": survey,
+        "layer": survey,
         "position_source": position_source,
         "n_positions": len(specs),
         "n_cutouts": len(manifest_rows),
@@ -371,8 +483,13 @@ def build_arg_parser():
                         help="provenance label -> reference_cutouts_<label> dir")
     parser.add_argument("--position-column", default="auto")
     parser.add_argument("--output-dir")
+    parser.add_argument("--survey", default=None,
+                        help="comparison survey backend: ls-dr10 (default; "
+                             "shares DECam lineage), ls-dr9, or ps1 "
+                             "(independent Pan-STARRS1 stack)")
     parser.add_argument("--layer", default=DEFAULT_LAYER,
-                        help="Legacy Surveys layer (e.g. ls-dr10)")
+                        help="Legacy Surveys layer when --survey is a Legacy "
+                             "layer (e.g. ls-dr10)")
     parser.add_argument("--size-arcsec", type=float,
                         default=DEFAULT_SIZE_ARCSEC)
     parser.add_argument("--pixscale", type=float, default=DEFAULT_PIXSCALE)
@@ -391,7 +508,8 @@ def main(argv=None):
         args.pp_root, args.target, positions=args.positions,
         photometry_file=args.photometry_file, output_dir=args.output_dir,
         position_source=args.position_source,
-        position_column=args.position_column, layer=args.layer,
+        position_column=args.position_column, survey=args.survey,
+        layer=args.layer,
         size_arcsec=args.size_arcsec, pixscale=args.pixscale, bands=args.bands,
         make_comparisons=args.comparisons,
         blink_interval_ms=args.blink_interval_ms)

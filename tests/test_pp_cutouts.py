@@ -4,7 +4,11 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
-from pptool_pp_cutouts import build_pp_cutouts
+from pptool_pp_cutouts import (
+    build_pp_cutouts,
+    default_output_dir,
+    load_positions,
+)
 
 
 def write_wcs_fits(path, ra_deg=144.17425351, dec_deg=13.91718331):
@@ -105,3 +109,65 @@ def test_discovers_multiple_per_directory_photometry_files(tmp_path):
     assert result["n_rows"] == 2
     assert result["n_cutouts"] == 2
     assert len(result["photometry_files"]) == 2
+
+
+def test_position_source_selects_distinct_directory(tmp_path):
+    write_wcs_fits(tmp_path / "src1.fits")
+    (tmp_path / "photometry_2025_MH348.dat").write_text(
+        "# header\n" + pp_row("src1", 2457398.7899512, "21.3285", "0.0877"))
+
+    result = build_pp_cutouts(tmp_path, "2025 MH348", size_arcsec=10.0,
+                              position_source="sbsar click")
+
+    expected = tmp_path / "PP_cutouts_sbsar_click"
+    assert default_output_dir(tmp_path, "sbsar click") == expected
+    assert Path(result["output_dir"]) == expected
+    assert result["position_source"] == "sbsar click"
+    assert not (tmp_path / "PP_cutouts").exists()
+    assert len(list(expected.glob("*_cutout.fits"))) == 1
+
+    rows = [json.loads(line)
+            for line in (expected / "cutouts.jsonl").read_text().splitlines()]
+    assert rows[0]["position_source"] == "sbsar click"
+    with fits.open(rows[0]["output_fits"]) as hdulist:
+        assert hdulist[0].header["CUTPSRC"] == "sbsar click"
+
+
+def test_positions_csv_centers_on_sbsar_centroid(tmp_path):
+    write_wcs_fits(tmp_path / "src1.fits")
+    click_ra, click_dec = 144.17500000, 13.91600000
+    centroid_ra, centroid_dec = 144.17425351, 13.91718331
+    positions = tmp_path / "click_observations.csv"
+    positions.write_text(
+        "image,fits_file,click_ra_deg,click_dec_deg,"
+        "centroid_ra_deg,centroid_dec_deg,click_mjd_utc\n"
+        "src1.png,{fits},{cra},{cdec},{tra},{tdec},57398.2899512\n".format(
+            fits=tmp_path / "src1.fits", cra=click_ra, cdec=click_dec,
+            tra=centroid_ra, tdec=centroid_dec),
+        encoding="utf-8")
+
+    # auto prefers the refined centroid over the raw click
+    specs, ra_col = load_positions(positions)
+    assert ra_col == "centroid_ra_deg"
+    assert specs[0]["ra_deg"] == centroid_ra
+    assert specs[0]["julian_date"] == 57398.2899512 + 2400000.5
+
+    result = build_pp_cutouts(tmp_path, "2025 MH348", size_arcsec=10.0,
+                              positions=positions,
+                              position_source="sbsar_centroid")
+
+    assert result["n_cutouts"] == 1
+    assert result["positions_file"] == str(positions.resolve())
+    rows = [json.loads(line) for line in
+            (Path(result["output_dir"]) / "cutouts.jsonl").read_text()
+            .splitlines()]
+    assert rows[0]["ra_deg"] == centroid_ra
+    assert rows[0]["astrometry_only"] is True
+    with fits.open(rows[0]["output_fits"]) as hdulist:
+        assert hdulist[0].header["CUTRA"] == centroid_ra
+
+    # explicit click column overrides the auto centroid preference
+    click_specs, click_col = load_positions(positions,
+                                            position_column="click")
+    assert click_col == "click_ra_deg"
+    assert click_specs[0]["ra_deg"] == click_ra

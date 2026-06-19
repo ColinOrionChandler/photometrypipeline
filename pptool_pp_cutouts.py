@@ -5,10 +5,12 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 from pathlib import Path
 import math
+import re
 
 import numpy as np
 from astropy import units as u
@@ -29,6 +31,19 @@ from pptool_mpcsubmission import (
 
 DEFAULT_CUTOUT_SIZE_ARCSEC = 126.0
 MANIFEST_NAME = "cutouts.jsonl"
+DEFAULT_OUTPUT_BASENAME = "PP_cutouts"
+
+# Right ascension / declination column pairs understood when ingesting an
+# externally supplied positions table (e.g. the CSV emitted by the SBSAR
+# click_astrometry_orbits tool).  Order encodes the "auto" preference: the
+# refined centroid is used when present, otherwise the raw click, otherwise a
+# plain ra_deg/dec_deg pair.
+POSITION_COLUMN_PAIRS = {
+    "centroid": ("centroid_ra_deg", "centroid_dec_deg"),
+    "click": ("click_ra_deg", "click_dec_deg"),
+    "plain": ("ra_deg", "dec_deg"),
+}
+POSITION_COLUMN_AUTO_ORDER = ("centroid", "click", "plain")
 
 
 def _float_or_none(value):
@@ -45,6 +60,112 @@ def row_is_astrometry_only(row):
     mag = _float_or_none(row.get("mag"))
     mag_sig = _float_or_none(row.get("mag_sig"))
     return mag is None or mag_sig is None or mag >= 90 or mag_sig >= 90
+
+
+def _sanitize_label(label):
+    """Reduce a free-form provenance label to a safe directory suffix."""
+
+    cleaned = re.sub(r"[^0-9A-Za-z._-]+", "_", str(label).strip())
+    cleaned = cleaned.strip("_.")
+    return cleaned or "custom"
+
+
+def default_output_dir(pp_root, position_source=None):
+    """Return the default cutout directory, distinct per position source.
+
+    Cutouts centered on different position provenances (PP-measured rows, an
+    SBSAR click export, raw ephemeris, ...) must not share a directory because
+    each run wipes stale products from its own directory.  A ``position_source``
+    label yields ``PP_cutouts_<label>`` so those product sets stay separate.
+    """
+
+    pp_root = Path(pp_root).expanduser().resolve()
+    if position_source:
+        return pp_root / ("%s_%s" % (DEFAULT_OUTPUT_BASENAME,
+                                     _sanitize_label(position_source)))
+    return pp_root / DEFAULT_OUTPUT_BASENAME
+
+
+def _resolve_position_column(fieldnames, position_column):
+    """Pick the (ra, dec) column pair from an ingested positions table."""
+
+    available = set(fieldnames or ())
+    if position_column and position_column != "auto":
+        if position_column not in POSITION_COLUMN_PAIRS:
+            raise ValueError("unknown position column %r (choose from %s)" %
+                             (position_column,
+                              ", ".join(sorted(POSITION_COLUMN_PAIRS))))
+        ra_col, dec_col = POSITION_COLUMN_PAIRS[position_column]
+        if ra_col not in available or dec_col not in available:
+            raise ValueError("positions table lacks %s/%s columns" %
+                             (ra_col, dec_col))
+        return position_column, ra_col, dec_col
+    for name in POSITION_COLUMN_AUTO_ORDER:
+        ra_col, dec_col = POSITION_COLUMN_PAIRS[name]
+        if ra_col in available and dec_col in available:
+            return name, ra_col, dec_col
+    raise ValueError("positions table has no recognised RA/Dec columns; "
+                     "expected one of %s" %
+                     ", ".join("%s/%s" % pair
+                               for pair in POSITION_COLUMN_PAIRS.values()))
+
+
+def _position_julian_date(row):
+    for key in ("julian_date", "jd"):
+        value = _float_or_none(row.get(key))
+        if value is not None:
+            return value
+    for key in ("click_mjd_utc", "centroid_mjd_utc", "mjd", "mjd_utc"):
+        value = _float_or_none(row.get(key))
+        if value is not None:
+            return value + 2400000.5
+    return None
+
+
+def load_positions(positions, position_column="auto"):
+    """Normalise supplied positions into cutout center specifications.
+
+    ``positions`` is either a path to a CSV file or an iterable of mappings.
+    Each returned spec carries the RA/Dec to center on plus enough provenance
+    (a FITS path or a same-stem token) to locate the source image.  SBSAR
+    ``click_astrometry_orbits`` exports are recognised directly.
+    """
+
+    if isinstance(positions, (str, Path)):
+        path = Path(positions).expanduser().resolve()
+        with path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = reader.fieldnames
+            rows = list(reader)
+    else:
+        rows = [dict(row) for row in positions]
+        fieldnames = sorted({key for row in rows for key in row})
+
+    _, ra_col, dec_col = _resolve_position_column(fieldnames, position_column)
+
+    specs = []
+    for row in rows:
+        ra_deg = _float_or_none(row.get(ra_col))
+        dec_deg = _float_or_none(row.get(dec_col))
+        if ra_deg is None or dec_deg is None:
+            continue
+        token = ""
+        for key in ("catalog_token", "fits_file", "image", "stem", "filename"):
+            value = row.get(key)
+            if value:
+                token = str(value)
+                break
+        specs.append({
+            "ra_deg": ra_deg,
+            "dec_deg": dec_deg,
+            "catalog_token": token,
+            "fits_file": row.get("fits_file") or None,
+            "julian_date": _position_julian_date(row),
+            "mag": _float_or_none(row.get("mag")),
+            "mag_sig": _float_or_none(row.get("mag_sig")),
+            "sextractor_flag": row.get("sextractor_flag"),
+        })
+    return specs, ra_col
 
 
 def _photometry_files(pp_root, target, photometry_file=None):
@@ -129,14 +250,11 @@ def _relative_to_root(path, root):
 
 
 def _output_stem(target, row):
-    token = Path(row["catalog_token"]).with_suffix("").name
+    token_value = str(row.get("catalog_token") or "position")
+    token = Path(token_value).with_suffix("").name or "position"
     jd = _float_or_none(row.get("julian_date")) or 0.0
-    text = "|".join([
-        row.get("catalog_token", ""),
-        row.get("julian_date", ""),
-        row.get("ra_deg", ""),
-        row.get("dec_deg", ""),
-    ])
+    text = "|".join(str(row.get(key, "")) for key in
+                    ("catalog_token", "julian_date", "ra_deg", "dec_deg"))
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
     return "%s_%s_jd%.7f_%s" % (
         target_to_filename(target), token, jd, digest)
@@ -175,115 +293,208 @@ def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec):
     }
 
 
-def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
-                     size_arcsec=DEFAULT_CUTOUT_SIZE_ARCSEC):
-    """Create FITS/PNG cutouts centered on PP measured RA/Dec rows."""
+def _resolve_spec_fits(spec, search_dirs):
+    """Locate the source FITS for a cutout center specification."""
 
-    pp_root = Path(pp_root).expanduser().resolve()
-    photometry_files = _photometry_files(pp_root, target, photometry_file)
-    output_dir = (pp_root / "PP_cutouts" if output_dir is None
-                  else Path(output_dir).expanduser().resolve())
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for pattern in ("*_cutout.fits", "*_cutout.png", MANIFEST_NAME):
-        for stale in output_dir.glob(pattern):
-            stale.unlink()
-
-    rows_by_file = [
-        (path, parse_photometry_file(path, require_rows=False))
-        for path in photometry_files
-    ]
-    products = []
-    manifest_rows = []
-    warnings = []
-
-    for photometry_file, rows in rows_by_file:
-        if not rows:
-            warnings.append("skipping %s; no active PP rows" %
-                            photometry_file)
+    fits_file = spec.get("fits_file")
+    if fits_file:
+        path = Path(str(fits_file)).expanduser()
+        if path.exists():
+            return path.resolve()
+    token = str(spec.get("catalog_token") or "")
+    if token:
+        token_path = Path(token).expanduser()
+        if token_path.exists():
+            return token_path.resolve()
+    bases = []
+    resolver_base = spec.get("resolver_base")
+    if resolver_base:
+        bases.append(Path(resolver_base))
+    for directory in search_dirs:
+        bases.append(Path(directory) / "_cutout_positions.dat")
+    for base in bases:
+        try:
+            return resolve_fits_filename(base, token)
+        except Exception:
             continue
+    raise FileNotFoundError("cannot resolve source FITS for %r" %
+                            (spec.get("fits_file") or token))
+
+
+def _specs_from_photometry(pp_root, target, photometry_file):
+    """Yield (specs, photometry_files, n_rows, warnings) for PP result rows."""
+
+    photometry_files = _photometry_files(pp_root, target, photometry_file)
+    specs = []
+    warnings = []
+    n_rows = 0
+    for path in photometry_files:
+        rows = parse_photometry_file(path, require_rows=False)
+        if not rows:
+            warnings.append("skipping %s; no active PP rows" % path)
+            continue
+        n_rows += len(rows)
         for row in rows:
             ra_deg = _float_or_none(row.get("ra_deg"))
             dec_deg = _float_or_none(row.get("dec_deg"))
             if ra_deg is None or dec_deg is None:
                 warnings.append(
-                    "skipping row in %s; missing source RA/Dec" %
-                    photometry_file)
+                    "skipping row in %s; missing source RA/Dec" % path)
                 continue
-            try:
-                source_fits = resolve_fits_filename(photometry_file,
-                                                    row["catalog_token"])
-            except Exception as exc:
-                warnings.append("skipping row in %s; cannot resolve FITS: %s" %
-                                (photometry_file, exc))
-                continue
-
-            try:
-                data, cutout_wcs, source_header, info = _build_cutout(
-                    source_fits, ra_deg, dec_deg, size_arcsec)
-            except Exception as exc:
-                warnings.append("skipping row in %s; cannot build cutout: %s" %
-                                (photometry_file, exc))
-                continue
-
-            stem = _output_stem(target, row)
-            output_fits = output_dir / ("%s_cutout.fits" % stem)
-            output_png = output_dir / ("%s_cutout.png" % stem)
-            header = source_header.copy()
-            header.update(cutout_wcs.to_header(relax=True))
-            header["CUTSRC"] = (source_fits.name[:68], "source PP image")
-            header["CUTSIZE"] = (float(size_arcsec), "cutout size arcsec")
-            header["CUTRA"] = (ra_deg, "PP measured source RA deg")
-            header["CUTDEC"] = (dec_deg, "PP measured source Dec deg")
-            header["CUTIN"] = (info["inside"], "target inside source")
-            header["CUTOVER"] = (info["overlap"], "cutout overlaps source")
-            header["ASTONLY"] = (row_is_astrometry_only(row),
-                                 "PP row lacks usable photometry")
-            fits.PrimaryHDU(data=data, header=header).writeto(
-                output_fits, overwrite=True, output_verify="silentfix")
-            _zscale_rgba(data).save(output_png)
-
             astrometry_only = row_is_astrometry_only(row)
-            manifest_row = {
-                "index": len(manifest_rows) + 1,
-                "target": target,
-                "catalog_token": row["catalog_token"],
-                "source_photometry_file": str(photometry_file),
-                "source_fits_file": str(source_fits),
-                "output_fits": str(output_fits),
-                "output_png": str(output_png),
-                "relative_output_fits": _relative_to_root(
-                    output_fits, pp_root),
-                "relative_output_png": _relative_to_root(
-                    output_png, pp_root),
-                "julian_date": _float_or_none(row.get("julian_date")),
+            specs.append({
                 "ra_deg": ra_deg,
                 "dec_deg": dec_deg,
-                "pred_minus_ra_arcsec": _float_or_none(
-                    row.get("pred_minus_ra_arcsec")),
-                "pred_minus_dec_arcsec": _float_or_none(
-                    row.get("pred_minus_dec_arcsec")),
-                "filter": row.get("band"),
+                "catalog_token": row.get("catalog_token"),
+                "fits_file": None,
+                "resolver_base": path,
+                "julian_date": _float_or_none(row.get("julian_date")),
                 "mag": (None if astrometry_only else
                         _float_or_none(row.get("mag"))),
                 "mag_sig": (None if astrometry_only else
                             _float_or_none(row.get("mag_sig"))),
                 "astrometry_only": astrometry_only,
                 "sextractor_flag": row.get("sextractor_flag"),
-                "inside": info["inside"],
-                "overlap": info["overlap"],
-                "x": info["x"],
-                "y": info["y"],
-                "size_arcsec": float(size_arcsec),
-                "size_px": info["size_px"],
-            }
-            manifest_rows.append(manifest_row)
-            products.append({
-                "fits": str(output_fits),
-                "png": str(output_png),
-                "astrometry_only": astrometry_only,
-                "inside": info["inside"],
-                "overlap": info["overlap"],
+                "band": row.get("band"),
+                "pred_minus_ra_arcsec": _float_or_none(
+                    row.get("pred_minus_ra_arcsec")),
+                "pred_minus_dec_arcsec": _float_or_none(
+                    row.get("pred_minus_dec_arcsec")),
+                "source_photometry_file": str(path),
             })
+    return specs, photometry_files, n_rows, warnings
+
+
+def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
+                     size_arcsec=DEFAULT_CUTOUT_SIZE_ARCSEC,
+                     position_source=None, positions=None,
+                     position_column="auto", fits_dir=None):
+    """Create FITS/PNG cutouts centered on reported RA/Dec positions.
+
+    By default each active PP photometry row is centered (the PP-measured
+    source position).  When ``positions`` is supplied (a CSV path or iterable of
+    mappings, e.g. an SBSAR ``click_astrometry_orbits`` export) cutouts are
+    centered on those reported positions instead.  ``position_source`` is a
+    provenance label that, absent an explicit ``output_dir``, selects a distinct
+    ``PP_cutouts_<label>`` directory so click-canvas and final-report cutout
+    sets never clobber one another.
+    """
+
+    pp_root = Path(pp_root).expanduser().resolve()
+    output_dir = (default_output_dir(pp_root, position_source)
+                  if output_dir is None
+                  else Path(output_dir).expanduser().resolve())
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for pattern in ("*_cutout.fits", "*_cutout.png", MANIFEST_NAME):
+        for stale in output_dir.glob(pattern):
+            stale.unlink()
+
+    search_dirs = []
+    if fits_dir is not None:
+        search_dirs.append(Path(fits_dir).expanduser().resolve())
+    search_dirs.append(pp_root)
+
+    products = []
+    manifest_rows = []
+    warnings = []
+
+    positions_path = None
+    photometry_files = []
+    if positions is not None:
+        if isinstance(positions, (str, Path)):
+            positions_path = str(Path(positions).expanduser().resolve())
+        specs, _ = load_positions(positions, position_column=position_column)
+        for spec in specs:
+            spec.setdefault("resolver_base", positions_path)
+            spec["astrometry_only"] = row_is_astrometry_only(spec)
+            spec.setdefault("band", None)
+            spec.setdefault("pred_minus_ra_arcsec", None)
+            spec.setdefault("pred_minus_dec_arcsec", None)
+            spec.setdefault("source_photometry_file", positions_path)
+        n_rows = len(specs)
+    else:
+        specs, photometry_files, n_rows, photometry_warnings = \
+            _specs_from_photometry(pp_root, target, photometry_file)
+        warnings.extend(photometry_warnings)
+
+    for spec in specs:
+        ra_deg = spec["ra_deg"]
+        dec_deg = spec["dec_deg"]
+        try:
+            source_fits = _resolve_spec_fits(spec, search_dirs)
+        except Exception as exc:
+            warnings.append("skipping %s; cannot resolve FITS: %s" %
+                            (spec.get("catalog_token") or spec.get("fits_file"),
+                             exc))
+            continue
+        try:
+            data, cutout_wcs, source_header, info = _build_cutout(
+                source_fits, ra_deg, dec_deg, size_arcsec)
+        except Exception as exc:
+            warnings.append("skipping %s; cannot build cutout: %s" %
+                            (source_fits, exc))
+            continue
+
+        stem = _output_stem(target, spec)
+        output_fits = output_dir / ("%s_cutout.fits" % stem)
+        output_png = output_dir / ("%s_cutout.png" % stem)
+        header = source_header.copy()
+        header.update(cutout_wcs.to_header(relax=True))
+        header["CUTSRC"] = (source_fits.name[:68], "source PP image")
+        header["CUTSIZE"] = (float(size_arcsec), "cutout size arcsec")
+        header["CUTRA"] = (ra_deg, "reported source RA deg")
+        header["CUTDEC"] = (dec_deg, "reported source Dec deg")
+        header["CUTIN"] = (info["inside"], "target inside source")
+        header["CUTOVER"] = (info["overlap"], "cutout overlaps source")
+        header["ASTONLY"] = (spec["astrometry_only"],
+                             "row lacks usable photometry")
+        if position_source:
+            header["CUTPSRC"] = (str(position_source)[:68],
+                                 "cutout position provenance")
+        fits.PrimaryHDU(data=data, header=header).writeto(
+            output_fits, overwrite=True, output_verify="silentfix")
+        _zscale_rgba(data).save(output_png)
+
+        manifest_row = {
+            "index": len(manifest_rows) + 1,
+            "target": target,
+            "position_source": position_source,
+            "catalog_token": spec.get("catalog_token"),
+            "source_photometry_file": spec.get("source_photometry_file"),
+            "source_fits_file": str(source_fits),
+            "output_fits": str(output_fits),
+            "output_png": str(output_png),
+            "relative_output_fits": _relative_to_root(output_fits, pp_root),
+            "relative_output_png": _relative_to_root(output_png, pp_root),
+            "julian_date": _float_or_none(spec.get("julian_date")),
+            "ra_deg": ra_deg,
+            "dec_deg": dec_deg,
+            "pred_minus_ra_arcsec": _float_or_none(
+                spec.get("pred_minus_ra_arcsec")),
+            "pred_minus_dec_arcsec": _float_or_none(
+                spec.get("pred_minus_dec_arcsec")),
+            "filter": spec.get("band"),
+            "mag": (None if spec["astrometry_only"] else
+                    _float_or_none(spec.get("mag"))),
+            "mag_sig": (None if spec["astrometry_only"] else
+                        _float_or_none(spec.get("mag_sig"))),
+            "astrometry_only": spec["astrometry_only"],
+            "sextractor_flag": spec.get("sextractor_flag"),
+            "inside": info["inside"],
+            "overlap": info["overlap"],
+            "x": info["x"],
+            "y": info["y"],
+            "size_arcsec": float(size_arcsec),
+            "size_px": info["size_px"],
+        }
+        manifest_rows.append(manifest_row)
+        products.append({
+            "fits": str(output_fits),
+            "png": str(output_png),
+            "astrometry_only": spec["astrometry_only"],
+            "inside": info["inside"],
+            "overlap": info["overlap"],
+        })
 
     manifest_path = output_dir / MANIFEST_NAME
     with manifest_path.open("w") as handle:
@@ -293,9 +504,12 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
     return {
         "output_dir": str(output_dir),
         "manifest_path": str(manifest_path),
-        "photometry_file": str(photometry_files[0]),
+        "position_source": position_source,
+        "positions_file": positions_path,
+        "photometry_file": (str(photometry_files[0])
+                            if photometry_files else positions_path),
         "photometry_files": [str(path) for path in photometry_files],
-        "n_rows": sum(len(rows) for _, rows in rows_by_file),
+        "n_rows": n_rows,
         "n_cutouts": len(products),
         "n_fits": len(products),
         "n_png": len(products),
@@ -310,13 +524,17 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
 
 def record_pp_cutouts(manifest, pp_root, target, photometry_file=None,
                       output_dir=None,
-                      size_arcsec=DEFAULT_CUTOUT_SIZE_ARCSEC):
+                      size_arcsec=DEFAULT_CUTOUT_SIZE_ARCSEC,
+                      position_source=None, positions=None,
+                      position_column="auto", fits_dir=None):
     """Build cutouts and attach product metadata/warnings to a workflow manifest."""
 
     try:
         result = build_pp_cutouts(
             pp_root, target, photometry_file=photometry_file,
-            output_dir=output_dir, size_arcsec=size_arcsec)
+            output_dir=output_dir, size_arcsec=size_arcsec,
+            position_source=position_source, positions=positions,
+            position_column=position_column, fits_dir=fits_dir)
     except Exception as exc:
         manifest["pp_cutouts_error"] = str(exc)
         manifest.setdefault("warnings", []).append(
@@ -337,6 +555,19 @@ def build_arg_parser():
     parser.add_argument("--output-dir", help="cutout output directory")
     parser.add_argument("--size-arcsec", type=float,
                         default=DEFAULT_CUTOUT_SIZE_ARCSEC)
+    parser.add_argument("--position-source",
+                        help="provenance label; selects a distinct "
+                             "PP_cutouts_<label> directory when --output-dir "
+                             "is not given (e.g. ephemeris, sbsar_click)")
+    parser.add_argument("--positions",
+                        help="CSV of reported positions to center on instead "
+                             "of PP rows (accepts SBSAR click/centroid exports)")
+    parser.add_argument("--position-column", default="auto",
+                        choices=sorted(POSITION_COLUMN_PAIRS) + ["auto"],
+                        help="which RA/Dec columns to use from --positions")
+    parser.add_argument("--fits-dir",
+                        help="directory to search for source FITS when "
+                             "--positions rows lack an explicit fits_file")
     return parser
 
 
@@ -344,7 +575,9 @@ def main(argv=None):
     args = build_arg_parser().parse_args(argv)
     result = build_pp_cutouts(
         args.pp_root, args.target, photometry_file=args.photometry_file,
-        output_dir=args.output_dir, size_arcsec=args.size_arcsec)
+        output_dir=args.output_dir, size_arcsec=args.size_arcsec,
+        position_source=args.position_source, positions=args.positions,
+        position_column=args.position_column, fits_dir=args.fits_dir)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

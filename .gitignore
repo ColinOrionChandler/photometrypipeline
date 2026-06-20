@@ -12,6 +12,7 @@ doc/_build/
 ppident_asteroids*
 ppident_variablestars*
 .idea/*
+.cache/
 
 ### Python ###
 ## Byte-compiled / optimized / DLL files

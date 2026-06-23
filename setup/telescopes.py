@@ -459,6 +459,73 @@ arc35agile_param = {
 }
 
 
+# Apache Point ARCSAT 0.5m, BYUcam
+arcsat_byucam_param = {
+    'telescope_instrument': 'ARCSAT/BYUcam',
+    'telescope_keyword': 'ARCSATBYUCAM',
+    'observatory_code': '705',
+    'secpix': (0.618, 0.618),
+    'ext_coeff': 0.05,
+
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    'binning': ('XBINNING', 'YBINNING'),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'RA',
+    'dec': 'DEC',
+    'radec_separator': ' ',
+    'date_keyword': 'DATE-OBS',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'FILTER',
+    'filter_translations': {
+        'B': 'B',
+        'V': 'V',
+        'g': 'g',
+        'r': 'r',
+        'i': 'i',
+        'sdss_r': 'r',
+        'Halpha': None,
+        'OIII': None,
+        'OG570': None,
+        'nmsu5007': None,
+    },
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+
+    'source_minarea': 7,
+    'source_snr': 3,
+    'aprad_default': 4,
+    'aprad_range': [2, 10],
+    'sex-config-file': rootpath+'/setup/generic.sex',
+    'mask_file': {},
+
+    'scamp-config-file': rootpath+'/setup/generic.scamp',
+    'reg_max_mag': 20,
+    'reg_search_radius': 0.5,
+    'source_tolerance': 'high',
+
+    'copy_keywords': ('OBSERVAT,TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,AIRMASS,SECPIX,TEL_KEYW,' +
+                      'XBINNING,YBINNING,MIDTIMJD'),
+    'swarp-config-file': rootpath+'/setup/generic.swarp',
+
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
+
+# Apache Point ARCSAT 0.5m, dcam-spare
+arcsat_dcamspare_param = arcsat_byucam_param.copy()
+arcsat_dcamspare_param.update({
+    'telescope_instrument': 'ARCSAT/dcam-spare',
+    'telescope_keyword': 'ARCSATDCAMSPARE',
+    'secpix': (0.667, 0.667),
+})
+
+
 # Magellan, IMACS long camera
 magimacsl_param = {
     'telescope_instrument': 'Magellan/IMACS long',  # telescope/instrument name
@@ -5102,7 +5169,8 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'DECAM', 'DECam', #6/12/17 COC/AMC: added DECAM; DECam 7/23/2021 COC
                           'PWFLINPOI', 'CFHTMEGAPRIME', 'CFHTCFH12K',
                           'CATALINALEM60', 'PANSTARRS1', 'SPACEWATCH09',
-                          'SDSS', 'WHTPFIP']
+                          'SDSS', 'WHTPFIP', 'ARCSATBYUCAM',
+                          'ARCSATDCAMSPARE']
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 # PP telescope keyword
@@ -5210,6 +5278,8 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'WHT': 'WHTPFIP',
                           'PRIME IMAGING': 'WHTPFIP',
                           'WHTPFIP': 'WHTPFIP',
+                          'BYUcam': 'ARCSATBYUCAM',
+                          'dcam-spare': 'ARCSATDCAMSPARE',
                         }
 
 # translate telescope keyword into parameter set defined here
@@ -5219,6 +5289,8 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'DCTLMI':        dctlmi_param,
                         'ARC35ARCTIC':   arc35arctic_param,
                         'ARC35AGILE':    arc35agile_param,
+                        'ARCSATBYUCAM':   arcsat_byucam_param,
+                        'ARCSATDCAMSPARE': arcsat_dcamspare_param,
                         'MAGIMACSL':      magimacsl_param,
                         'MAGIMACSS':      magimacss_param,
                         'CA123DLRMKIII': ca123dlrmkiii_param,

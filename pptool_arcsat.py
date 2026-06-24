@@ -61,6 +61,9 @@ SATURATED_FIT_RADIUS_PX = 35.0
 SATURATED_MASKED_CORE_RADIUS_PX = 5.0
 SATURATED_SKY_INNER_RADIUS_PX = 45.0
 SATURATED_SKY_OUTER_RADIUS_PX = 60.0
+ETC_REFERENCE_SNR = 5.0
+ETC_EXPOSURE_SCALE_MAG = 1.25
+ETC_COMMON_EXPOSURES = (5, 10, 20, 30, 40, 60, 90, 120, 180, 300, 400, 600)
 
 
 @contextmanager
@@ -824,6 +827,270 @@ def write_depth_summary(path, rows):
     return Path(path), rows
 
 
+def percentile(values, pct):
+    if not values:
+        return None
+    return float(np.percentile(np.asarray(values, dtype=float), pct))
+
+
+def etc_summary_paths(inputs=None, summaries=None):
+    paths = []
+    for value in summaries or []:
+        path = Path(value).expanduser().resolve()
+        if not path.is_file():
+            raise IOError("missing ETC summary CSV: %s" % path)
+        paths.append(path)
+    for value in inputs or []:
+        path = (Path(value).expanduser().resolve() / "PP" / "depth" /
+                DEPTH_SUMMARY_NAME)
+        if not path.is_file():
+            raise IOError("missing ETC depth summary for input: %s" % path)
+        paths.append(path)
+    if not paths:
+        raise ValueError("provide at least one --summary or --input for ETC")
+    return paths
+
+
+def load_etc_depth_rows(summary_paths, filter_name=None, telescope=None):
+    rows = []
+    for path in summary_paths:
+        with Path(path).open(newline="") as handle:
+            for row in csv.DictReader(handle):
+                if filter_name and row.get("filter") != filter_name:
+                    continue
+                if telescope and row.get("telescope") != telescope:
+                    continue
+                exptime = float_value(row.get("exptime"))
+                depth_mag = float_value(row.get("depth_mag_p90"))
+                if exptime is None or exptime <= 0:
+                    continue
+                if depth_mag is None or not np.isfinite(depth_mag):
+                    continue
+                normalized = dict(row)
+                normalized["summary_csv"] = str(Path(path).resolve())
+                normalized["exptime"] = exptime
+                normalized["depth_mag_p90"] = depth_mag
+                normalized["depth_mag_1s"] = (
+                    depth_mag -
+                    ETC_EXPOSURE_SCALE_MAG * math.log10(exptime))
+                rows.append(normalized)
+    return rows
+
+
+def round_up_common_exposure(seconds):
+    if seconds is None or not np.isfinite(seconds) or seconds <= 0:
+        return None
+    for exposure in ETC_COMMON_EXPOSURES:
+        if seconds <= exposure:
+            return float(exposure)
+    return float(math.ceil(seconds / 60.0) * 60.0)
+
+
+def estimate_exptime(depth_mag_1s, target_mag, snr,
+                     reference_snr=ETC_REFERENCE_SNR):
+    if depth_mag_1s is None:
+        return None
+    if snr <= 0 or reference_snr <= 0:
+        raise ValueError("SNR values must be positive")
+    exponent = (
+        target_mag - depth_mag_1s +
+        2.5 * math.log10(snr / reference_snr)
+    ) / ETC_EXPOSURE_SCALE_MAG
+    return float(10 ** exponent)
+
+
+def build_etc_calibration(rows, filter_name, telescope=None,
+                          reference_snr=ETC_REFERENCE_SNR):
+    if not rows:
+        scope = filter_name if telescope is None else "%s/%s" % (
+            telescope, filter_name)
+        raise ValueError("no usable ARCSAT depth-summary rows for %s" % scope)
+    depth_1s = [float(row["depth_mag_1s"]) for row in rows]
+    exptimes = [float(row["exptime"]) for row in rows]
+    depths = [float(row["depth_mag_p90"]) for row in rows]
+    zeropoints = [
+        float_value(row.get("zeropoint")) for row in rows
+        if float_value(row.get("zeropoint")) is not None
+    ]
+    telescopes = sorted({row.get("telescope", "") for row in rows})
+    filters = sorted({row.get("filter", "") for row in rows})
+    return {
+        "filter": filter_name,
+        "telescope": telescope,
+        "matched_filters": filters,
+        "matched_telescopes": telescopes,
+        "reference_snr": reference_snr,
+        "calibration_rows": len(rows),
+        "depth_mag_p90_definition": (
+            "90th-percentile calibrated source magnitude from PP extraction"),
+        "depth_mag_1s_median": percentile(depth_1s, 50),
+        "depth_mag_1s_p16": percentile(depth_1s, 16),
+        "depth_mag_1s_p84": percentile(depth_1s, 84),
+        "observed_exptime_min": min(exptimes),
+        "observed_exptime_max": max(exptimes),
+        "observed_depth_mag_p90_min": min(depths),
+        "observed_depth_mag_p90_max": max(depths),
+        "zeropoint_median": percentile(zeropoints, 50),
+        "summary_csvs": sorted({row["summary_csv"] for row in rows}),
+        "model": (
+            "empirical PP depth scaling; SNR is assumed proportional to "
+            "sqrt(total exposure time)"),
+    }
+
+
+def group_etc_rows_by_filter(rows):
+    groups = {}
+    for row in rows:
+        groups.setdefault(row.get("filter", ""), []).append(row)
+    return groups
+
+
+def plot_etc_depth(rows_by_filter, filters, output_path,
+                   reference_snr=ETC_REFERENCE_SNR):
+    output_path = Path(output_path).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    mplconfig = Path(os.environ.get("TMPDIR", "/private/tmp")) / "mplconfig"
+    mplconfig.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(mplconfig))
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    plotted = []
+    missing = []
+    colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    for idx, filter_name in enumerate(filters):
+        rows = rows_by_filter.get(filter_name, [])
+        if not rows:
+            missing.append(filter_name)
+            continue
+        calibration = build_etc_calibration(
+            rows, filter_name, reference_snr=reference_snr)
+        color = colors[idx % len(colors)] if colors else None
+        exptimes = np.asarray([float(row["exptime"]) for row in rows])
+        depths = np.asarray([float(row["depth_mag_p90"]) for row in rows])
+        ax.scatter(exptimes, depths, s=34, alpha=0.75, label=filter_name,
+                   color=color)
+        xmin = max(1.0, float(np.nanmin(exptimes)) / 2.0)
+        xmax = max(float(np.nanmax(exptimes)) * 2.0, xmin * 2.0)
+        model_x = np.geomspace(xmin, xmax, 80)
+        model_y = (
+            calibration["depth_mag_1s_median"] +
+            ETC_EXPOSURE_SCALE_MAG * np.log10(model_x)
+        )
+        ax.plot(model_x, model_y, color=color, linewidth=1.6, alpha=0.85)
+        plotted.append({
+            "filter": filter_name,
+            "calibration_rows": len(rows),
+            "depth_mag_1s_median": calibration["depth_mag_1s_median"],
+            "observed_exptime_min": calibration["observed_exptime_min"],
+            "observed_exptime_max": calibration["observed_exptime_max"],
+        })
+
+    ax.set_xscale("log")
+    ax.set_xlabel("Exposure time (s)")
+    ax.set_ylabel("PP depth proxy: 90th-percentile calibrated source mag")
+    ax.set_title("ARCSAT empirical exposure time versus depth")
+    ax.grid(True, which="both", alpha=0.25)
+    if plotted:
+        ax.legend(title="Filter")
+    if missing:
+        ax.text(
+            0.02, 0.02, "No usable rows: %s" % ", ".join(missing),
+            transform=ax.transAxes, ha="left", va="bottom", fontsize=9,
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": "white",
+                  "edgecolor": "0.8", "alpha": 0.9})
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160)
+    plt.close(fig)
+    return {
+        "plot": str(output_path),
+        "plotted_filters": [item["filter"] for item in plotted],
+        "missing_filters": missing,
+        "plotted": plotted,
+    }
+
+
+def run_etc_plot(inputs=None, summaries=None, filters=None, output=None,
+                 telescope=None, reference_snr=ETC_REFERENCE_SNR):
+    if not filters:
+        raise ValueError("provide at least one --filter for ETC plotting")
+    if output is None:
+        raise ValueError("provide --output for ETC plotting")
+    summary_paths = etc_summary_paths(inputs=inputs, summaries=summaries)
+    rows = load_etc_depth_rows(summary_paths, telescope=telescope)
+    requested = list(dict.fromkeys(filters))
+    rows_by_filter = group_etc_rows_by_filter(rows)
+    result = plot_etc_depth(rows_by_filter, requested, output,
+                            reference_snr=reference_snr)
+    result.update({
+        "mode": "etc-plot",
+        "filters": requested,
+        "telescope": telescope,
+        "summary_csvs": [str(path) for path in summary_paths],
+        "warning": (
+            "rudimentary empirical plot from PP depth summaries; points are "
+            "not a full CCD noise model"),
+    })
+    return result
+
+
+def run_etc(inputs=None, summaries=None, filter_name=None, target_mag=None,
+            snr=ETC_REFERENCE_SNR, telescope=None,
+            reference_snr=ETC_REFERENCE_SNR, max_single_exposure=600.0):
+    summary_paths = etc_summary_paths(inputs=inputs, summaries=summaries)
+    rows = load_etc_depth_rows(summary_paths, filter_name=filter_name,
+                               telescope=telescope)
+    calibration = build_etc_calibration(rows, filter_name, telescope=telescope,
+                                        reference_snr=reference_snr)
+    estimate = {
+        "mode": "etc",
+        "filter": filter_name,
+        "target_mag": target_mag,
+        "snr": snr,
+        "max_single_exposure": max_single_exposure,
+        "calibration": calibration,
+        "warning": (
+            "rudimentary empirical calculator; not a CCD noise model, and "
+            "best used near the calibrated magnitude/exposure range"),
+    }
+    if target_mag is None:
+        return estimate
+
+    median = calibration["depth_mag_1s_median"]
+    p16 = calibration["depth_mag_1s_p16"]
+    p84 = calibration["depth_mag_1s_p84"]
+    exptime = estimate_exptime(median, target_mag, snr,
+                               reference_snr=reference_snr)
+    estimate["estimated_total_exptime_seconds"] = exptime
+    estimate["rounded_single_exposure_seconds"] = round_up_common_exposure(
+        exptime)
+    estimate["estimated_total_exptime_range_seconds"] = {
+        "optimistic": estimate_exptime(p84, target_mag, snr,
+                                       reference_snr=reference_snr),
+        "pessimistic": estimate_exptime(p16, target_mag, snr,
+                                        reference_snr=reference_snr),
+    }
+    warnings = []
+    if len(rows) < 5:
+        warnings.append("calibration is based on fewer than 5 frames")
+    if target_mag > calibration["observed_depth_mag_p90_max"]:
+        warnings.append("target is fainter than the empirical depth range")
+    if exptime > calibration["observed_exptime_max"]:
+        warnings.append("estimate extrapolates beyond observed exposure times")
+    if max_single_exposure and exptime > max_single_exposure:
+        count = int(math.ceil(exptime / max_single_exposure))
+        estimate["stack_recommendation"] = {
+            "exposures": count,
+            "single_exposure_seconds": float(max_single_exposure),
+            "total_exposure_seconds": float(count * max_single_exposure),
+        }
+        warnings.append("use a stack; estimated total exceeds max single exposure")
+    estimate["warnings"] = warnings
+    return estimate
+
+
 def run_depth(input_dir, overwrite=False):
     input_dir = Path(input_dir).expanduser().resolve()
     output_root = input_dir / "PP" / "depth"
@@ -898,6 +1165,48 @@ def build_arg_parser():
     depth.add_argument("--input", required=True)
     depth.add_argument("--no-overwrite", action="store_true",
                        help="reuse existing PP work directory files")
+
+    etc = subparsers.add_parser(
+        "etc", help="estimate ARCSAT exposure time from empirical PP depths")
+    etc.add_argument("--input", action="append", default=[],
+                     help=("reduced directory containing PP/depth/%s; may be "
+                           "given more than once" % DEPTH_SUMMARY_NAME))
+    etc.add_argument("--summary", action="append", default=[],
+                     help=("ARCSAT depth summary CSV; may be given more than "
+                           "once"))
+    etc.add_argument("--filter", required=True)
+    etc.add_argument("--mag", type=float,
+                     help="target magnitude to estimate exposure time for")
+    etc.add_argument("--snr", type=float, default=ETC_REFERENCE_SNR,
+                     help="desired S/N; default %(default)s")
+    etc.add_argument("--telescope",
+                     help="optional PP telescope key, e.g. ARCSATBYUCAM")
+    etc.add_argument("--reference-snr", type=float, default=ETC_REFERENCE_SNR,
+                     help=("S/N represented by depth_mag_p90 calibration "
+                           "points; default %(default)s"))
+    etc.add_argument("--max-single-exposure", type=float, default=600.0,
+                     help=("largest practical single exposure for stack "
+                           "recommendations; default %(default)s seconds"))
+
+    etc_plot = subparsers.add_parser(
+        "etc-plot", help="plot empirical ARCSAT exposure time versus depth")
+    etc_plot.add_argument("--input", action="append", default=[],
+                          help=("reduced directory containing PP/depth/%s; "
+                                "may be given more than once" %
+                                DEPTH_SUMMARY_NAME))
+    etc_plot.add_argument("--summary", action="append", default=[],
+                          help=("ARCSAT depth summary CSV; may be given more "
+                                "than once"))
+    etc_plot.add_argument("--filter", action="append", required=True,
+                          help="filter to plot; may be given more than once")
+    etc_plot.add_argument("--output", required=True,
+                          help="output PNG/PDF/SVG path")
+    etc_plot.add_argument("--telescope",
+                          help="optional PP telescope key")
+    etc_plot.add_argument("--reference-snr", type=float,
+                          default=ETC_REFERENCE_SNR,
+                          help=("S/N represented by depth_mag_p90 "
+                                "calibration points; default %(default)s"))
     return parser
 
 
@@ -909,19 +1218,49 @@ def main(argv=None):
                                   saturated_recovery=args.saturated_recovery)
     elif args.mode == "depth":
         manifest = run_depth(args.input, overwrite=not args.no_overwrite)
+    elif args.mode == "etc":
+        manifest = run_etc(
+            inputs=args.input, summaries=args.summary,
+            filter_name=args.filter, target_mag=args.mag, snr=args.snr,
+            telescope=args.telescope, reference_snr=args.reference_snr,
+            max_single_exposure=args.max_single_exposure)
+    elif args.mode == "etc-plot":
+        manifest = run_etc_plot(
+            inputs=args.input, summaries=args.summary, filters=args.filter,
+            output=args.output, telescope=args.telescope,
+            reference_snr=args.reference_snr)
     else:
         raise ValueError("unknown mode: %s" % args.mode)
+    output_root = manifest.get("output_root")
     print(json.dumps({
         "mode": manifest["mode"],
-        "output_root": manifest.get("output_root"),
+        "output_root": output_root,
         "combined_photometry_csv": manifest.get("combined_photometry_csv"),
         "combined_photometry_rows": manifest.get("combined_photometry_rows"),
         "saturated_recovery_csv": manifest.get("saturated_recovery_csv"),
         "saturated_recovery_rows": manifest.get("saturated_recovery_rows"),
         "depth_summary_csv": manifest.get("depth_summary_csv"),
         "depth_summary_rows": manifest.get("depth_summary_rows"),
-        "manifest": str(Path(manifest.get("output_root", ".")) /
-                        MANIFEST_NAME),
+        "filter": manifest.get("filter"),
+        "target_mag": manifest.get("target_mag"),
+        "snr": manifest.get("snr"),
+        "estimated_total_exptime_seconds": manifest.get(
+            "estimated_total_exptime_seconds"),
+        "rounded_single_exposure_seconds": manifest.get(
+            "rounded_single_exposure_seconds"),
+        "estimated_total_exptime_range_seconds": manifest.get(
+            "estimated_total_exptime_range_seconds"),
+        "stack_recommendation": manifest.get("stack_recommendation"),
+        "calibration": manifest.get("calibration"),
+        "plot": manifest.get("plot"),
+        "filters": manifest.get("filters"),
+        "plotted_filters": manifest.get("plotted_filters"),
+        "missing_filters": manifest.get("missing_filters"),
+        "summary_csvs": manifest.get("summary_csvs"),
+        "warnings": manifest.get("warnings"),
+        "warning": manifest.get("warning"),
+        "manifest": (str(Path(output_root) / MANIFEST_NAME)
+                     if output_root else None),
     }, indent=2, sort_keys=True))
 
 

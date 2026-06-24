@@ -1,3 +1,5 @@
+import csv
+import math
 import os
 from pathlib import Path
 import sys
@@ -135,6 +137,129 @@ def test_summarize_depth_catalog_uses_calibrated_percentile():
     assert row["zeropoint_sig"] == 0.03
     assert row["mag_column"] == "gmag"
     assert np.isclose(row["depth_mag_p90"], 21.8)
+
+
+def write_depth_summary_csv(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "source_filename", "working_name", "object", "filter", "telescope",
+        "instrume", "date_obs", "midtimjd", "exptime", "source_count",
+        "zeropoint", "zeropoint_sig", "zeropoint_nstars",
+        "zeropoint_usedstars", "mag_column", "depth_mag_p90",
+    ]
+    rows = [
+        {
+            "source_filename": "v_60.fits",
+            "working_name": "0001_v_60.fits",
+            "object": "field",
+            "filter": "V",
+            "telescope": "ARCSATBYUCAM",
+            "instrume": "BYUcam",
+            "date_obs": "2024-04-20T01:00:00",
+            "midtimjd": "2460420.5",
+            "exptime": "60",
+            "source_count": "100",
+            "zeropoint": "25.0",
+            "zeropoint_sig": "0.05",
+            "zeropoint_nstars": "20",
+            "zeropoint_usedstars": "18",
+            "mag_column": "Vmag",
+            "depth_mag_p90": "19.5",
+        },
+        {
+            "source_filename": "v_240.fits",
+            "working_name": "0002_v_240.fits",
+            "object": "field",
+            "filter": "V",
+            "telescope": "ARCSATBYUCAM",
+            "instrume": "BYUcam",
+            "date_obs": "2024-04-20T01:10:00",
+            "midtimjd": "2460420.6",
+            "exptime": "240",
+            "source_count": "120",
+            "zeropoint": "25.2",
+            "zeropoint_sig": "0.06",
+            "zeropoint_nstars": "22",
+            "zeropoint_usedstars": "20",
+            "mag_column": "Vmag",
+            "depth_mag_p90": "20.25",
+        },
+        {
+            "source_filename": "b_60.fits",
+            "working_name": "0003_b_60.fits",
+            "object": "field",
+            "filter": "B",
+            "telescope": "ARCSATBYUCAM",
+            "instrume": "BYUcam",
+            "date_obs": "2024-04-20T01:20:00",
+            "midtimjd": "2460420.7",
+            "exptime": "60",
+            "source_count": "90",
+            "zeropoint": "24.5",
+            "zeropoint_sig": "0.08",
+            "zeropoint_nstars": "18",
+            "zeropoint_usedstars": "16",
+            "mag_column": "Bmag",
+            "depth_mag_p90": "19.0",
+        },
+    ]
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def test_etc_reads_depth_summary_from_reduced_input(tmp_path):
+    summary = tmp_path / "PP" / "depth" / arcsat.DEPTH_SUMMARY_NAME
+    write_depth_summary_csv(summary)
+
+    estimate = arcsat.run_etc(inputs=[tmp_path], filter_name="V",
+                              target_mag=20.0)
+
+    assert estimate["mode"] == "etc"
+    assert estimate["calibration"]["calibration_rows"] == 2
+    assert estimate["calibration"]["matched_filters"] == ["V"]
+    assert estimate["estimated_total_exptime_seconds"] > 0
+
+
+def test_etc_exposure_estimate_scales_from_empirical_depth(tmp_path):
+    summary = tmp_path / "summary.csv"
+    write_depth_summary_csv(summary)
+    rows = arcsat.load_etc_depth_rows([summary], filter_name="V")
+    calibration = arcsat.build_etc_calibration(rows, "V")
+    mag_1s = calibration["depth_mag_1s_median"]
+
+    estimate = arcsat.run_etc(summaries=[summary], filter_name="V",
+                              target_mag=mag_1s, snr=5.0)
+
+    assert math.isclose(
+        estimate["estimated_total_exptime_seconds"], 1.0, rel_tol=1e-12)
+    assert estimate["rounded_single_exposure_seconds"] == 5.0
+
+
+def test_etc_reports_stack_when_total_exceeds_single_exposure(tmp_path):
+    summary = tmp_path / "summary.csv"
+    write_depth_summary_csv(summary)
+
+    estimate = arcsat.run_etc(summaries=[summary], filter_name="V",
+                              target_mag=24.0, max_single_exposure=600.0)
+
+    assert estimate["stack_recommendation"]["exposures"] > 1
+    assert "use a stack" in " ".join(estimate["warnings"])
+
+
+def test_etc_plot_writes_depth_figure_and_reports_missing_filters(tmp_path):
+    summary = tmp_path / "summary.csv"
+    plot = tmp_path / "etc.png"
+    write_depth_summary_csv(summary)
+
+    result = arcsat.run_etc_plot(
+        summaries=[summary], filters=["B", "V", "i"], output=plot)
+
+    assert plot.exists()
+    assert plot.stat().st_size > 0
+    assert result["plotted_filters"] == ["B", "V"]
+    assert result["missing_filters"] == ["i"]
 
 
 def write_saturated_target_fits(path):

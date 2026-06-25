@@ -73,6 +73,7 @@ PS1_FILENAMES_URL = "https://ps1images.stsci.edu/cgi-bin/ps1filenames.py"
 PS1_FITSCUT_URL = "https://ps1images.stsci.edu/cgi-bin/fitscut.cgi"
 PS1_PIXSCALE = 0.25               # arcsec/pixel (Pan-STARRS1)
 SURVEY_CHOICES = ("ls-dr10", "ls-dr9", "ps1")
+DEFAULT_SURVEY_CHOICES = ("ls-dr10", "ps1")
 
 
 def _http_get(url, timeout=60):
@@ -83,6 +84,78 @@ def _http_get(url, timeout=60):
 
 def survey_label(survey):
     return "PS1" if survey == "ps1" else "Legacy Surveys"
+
+
+def _normalize_survey_list(value):
+    """Normalize one or more survey tokens into supported backend names."""
+
+    if value is None:
+        return [DEFAULT_LAYER]
+    if isinstance(value, str):
+        tokens = [token.strip().lower() for token in value.split(",")
+                  if token.strip()]
+    else:
+        tokens = list(value)
+    if not tokens:
+        return [DEFAULT_LAYER]
+    surveys = []
+    for raw in tokens:
+        token = str(raw).strip().lower()
+        if token == "des":
+            token = "ls-dr10"
+        if token not in SURVEY_CHOICES:
+            raise ValueError("unsupported survey backend %r; supported: %s" %
+                             (token, ", ".join(SURVEY_CHOICES)))
+        if token not in surveys:
+            surveys.append(token)
+    return surveys
+
+
+def _infer_target_from_cutout_path(cutout_path):
+    """Infer a best-effort target label from a cutout filename."""
+
+    name = Path(cutout_path).name
+    stem = Path(name).with_suffix("").with_suffix("").name
+    parts = [part for part in stem.split("_") if part]
+    if not parts:
+        return "cutout"
+    if len(parts) >= 2 and parts[0]:
+        return "_".join(parts[:2])
+    return parts[0]
+
+
+def _specs_from_cutout_paths(cutout_paths):
+    """Build reference-check specs from cutout FITS files."""
+
+    specs = []
+    for raw in cutout_paths:
+        path = Path(raw).expanduser().resolve()
+        if not path.exists():
+            raise IOError("cutout does not exist: %s" % path)
+        with fits.open(str(path), memmap=False, ignore_missing_end=True) as hdulist:
+            hdu = next((h for h in hdulist
+                        if getattr(h, "data", None) is not None), None)
+            if hdu is None or np.asarray(hdu.data).ndim < 2:
+                raise IOError("cutout image has no 2D image data: %s" % path)
+            data = np.asarray(hdu.data, dtype=float)
+            wcs = WCS(hdu.header, relax=True)
+            if not wcs.has_celestial:
+                raise IOError("cutout is missing a celestial WCS: %s" % path)
+            ny, nx = data.shape[:2]
+            ra_deg, dec_deg = wcs.all_pix2world((nx - 1) / 2.0,
+                                                (ny - 1) / 2.0, 0)
+        ra_deg = _float_or_none(ra_deg)
+        dec_deg = _float_or_none(dec_deg)
+        if ra_deg is None or dec_deg is None:
+            raise IOError("cannot determine sky center from cutout WCS: %s" % path)
+        specs.append({
+            "ra_deg": ra_deg,
+            "dec_deg": dec_deg,
+            "catalog_token": path.name,
+            "fits_file": str(path),
+            "julian_date": None,
+        })
+    return specs
 
 
 def _ps1_filename_table(ra_deg, dec_deg, filters, fetcher):
@@ -220,13 +293,25 @@ def _zscale_gray(data):
     return (norm * 255).astype(np.uint8)
 
 
+def _first_image_hdu(fits_path):
+    """Return the first 2D+ image HDU data and WCS from a FITS file."""
+
+    with fits.open(str(fits_path), memmap=False) as hdulist:
+        for hdu in hdulist:
+            data = getattr(hdu, "data", None)
+            if data is None:
+                continue
+            arr = np.asarray(data)
+            if arr.ndim < 2:
+                continue
+            return np.asarray(arr, dtype=float), WCS(hdu.header, relax=True)
+    raise IOError("FITS has no 2D image data: %s" % fits_path)
+
+
 def _band_plane(fits_path):
     """Return (2D first-band image, 2D celestial WCS) from a Legacy FITS cutout."""
 
-    with fits.open(str(fits_path), memmap=False) as hdulist:
-        hdu = next(h for h in hdulist if getattr(h, "data", None) is not None)
-        data = np.asarray(hdu.data, dtype=float)
-        wcs = WCS(hdu.header)
+    data, wcs = _first_image_hdu(fits_path)
     if data.ndim == 3:           # grz cube -> first band (g)
         data = data[0]
     return data, wcs.celestial
@@ -241,9 +326,7 @@ def _reproject_onto(source_fits, target_wcs, shape):
 
     from scipy.ndimage import map_coordinates
 
-    with fits.open(str(source_fits), memmap=False) as hdulist:
-        src = np.asarray(hdulist[0].data, dtype=float)
-        src_wcs = WCS(hdulist[0].header).celestial
+    src, src_wcs = _first_image_hdu(source_fits)
     ny, nx = shape
     yy, xx = np.mgrid[0:ny, 0:nx]
     ra, dec = target_wcs.all_pix2world(xx, yy, 0)
@@ -270,6 +353,95 @@ def _label(img_uint8, text):
     return im
 
 
+def _reference_frame_from_path(path):
+    """Return an RGB reference frame for a survey cutout output path."""
+
+    if not path:
+        return None
+    p = Path(path)
+    if not p.exists():
+        return None
+    suffix = p.suffix.lower()
+    if suffix in (".jpg", ".jpeg", ".png", ".bmp", ".gif"):
+        with Image.open(str(p)) as handle:
+            return handle.convert("RGB")
+    if suffix != ".fits":
+        return None
+    img, _ = _band_plane(p)
+    return Image.fromarray(_zscale_gray(img))
+
+
+def _resize_to_shape(data, shape):
+    """Resize a 2D image array to target shape using PIL interpolation."""
+
+    arr = np.asarray(data, dtype=float)
+    if arr.ndim > 2:
+        arr = arr[0]
+    target = np.array(shape, dtype=int)
+    if arr.shape == tuple(target):
+        return arr
+    h, w = int(target[0]), int(target[1])
+    u8 = _zscale_gray(arr)
+    resized = Image.fromarray(u8).resize((w, h), resample=Image.BILINEAR)
+    return np.asarray(resized, dtype=float)
+
+
+def _build_survey_blinks(results, output_root, interval_ms):
+    """Build GIFs that blink survey images for the same cutout positions."""
+
+    if not results or len(results) < 2 or output_root is None:
+        return []
+    output_root = Path(output_root).expanduser().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    survey_names = [result["survey"] for result in results]
+    survey_label_0 = _sanitize_label(survey_names[0])
+    survey_label_1 = _sanitize_label(survey_names[1])
+    first_rows = results[0].get("rows", [])
+    second_rows = results[1].get("rows", [])
+
+    def row_to_stem(row):
+        return _output_stem(row["target"], {
+            "catalog_token": row.get("catalog_token"),
+            "julian_date": row.get("julian_date"),
+            "ra_deg": row.get("ra_deg"),
+            "dec_deg": row.get("dec_deg"),
+        })
+
+    first = {row_to_stem(row): row for row in first_rows}
+    second = {row_to_stem(row): row for row in second_rows}
+    common = sorted(set(first.keys()) & set(second.keys()))
+    gifs = []
+    for stem in common:
+        first_row = first[stem]
+        second_row = second[stem]
+        first_frame = _reference_frame_from_path(first_row.get("output_jpg"))
+        if first_frame is None:
+            first_frame = _reference_frame_from_path(first_row.get("output_fits"))
+        second_frame = _reference_frame_from_path(second_row.get("output_jpg"))
+        if second_frame is None:
+            second_frame = _reference_frame_from_path(second_row.get("output_fits"))
+        if first_frame is None or second_frame is None:
+            continue
+        first_frame = first_frame.convert("RGB")
+        second_frame = second_frame.convert("RGB")
+        if first_frame.size != second_frame.size:
+            width = max(first_frame.width, second_frame.width)
+            height = max(first_frame.height, second_frame.height)
+            canvas0 = Image.new("RGB", (width, height), (0, 0, 0))
+            canvas1 = Image.new("RGB", (width, height), (0, 0, 0))
+            canvas0.paste(first_frame, (0, 0))
+            canvas1.paste(second_frame, (0, 0))
+            first_frame, second_frame = canvas0, canvas1
+        out = output_root / ("%s_%s_vs_%s_blink.gif" % (stem,
+                                                       survey_label_0,
+                                                       survey_label_1))
+        first_frame.save(str(out), save_all=True, append_images=[second_frame],
+                        duration=int(interval_ms), loop=0, disposal=2)
+        gifs.append(str(out))
+    return gifs
+
+
 def build_comparison_products(source_fits, ref_fits, out_png, out_gif,
                               our_label="DECam (ours)", ref_label="LS ref",
                               interval_ms=DEFAULT_BLINK_INTERVAL_MS):
@@ -280,7 +452,16 @@ def build_comparison_products(source_fits, ref_fits, out_png, out_gif,
     """
 
     ref_img, ref_wcs = _band_plane(ref_fits)
-    our_img = _reproject_onto(source_fits, ref_wcs, ref_img.shape)
+    try:
+        our_img = _reproject_onto(source_fits, ref_wcs, ref_img.shape)
+    except Exception:
+        # Some small source cutouts can carry unusual WCS that breaks reprojection.
+        # Fall back to a best-effort resized frame so a comparison blink is still
+        # produced for QA purposes.
+        src_img, _ = _first_image_hdu(source_fits)
+        if src_img.ndim == 3:
+            src_img = src_img[0]
+        our_img = _resize_to_shape(src_img, ref_img.shape)
     our_u = _zscale_gray(our_img)
     ref_u = _zscale_gray(ref_img)
 
@@ -459,6 +640,7 @@ def build_reference_cutouts(pp_root, target, positions=None,
     return {
         "output_dir": str(output_dir),
         "manifest_path": str(manifest_path),
+        "rows": manifest_rows,
         "survey": survey,
         "layer": survey,
         "position_source": position_source,
@@ -470,12 +652,67 @@ def build_reference_cutouts(pp_root, target, positions=None,
     }
 
 
+def _run_multi_surveys(pp_root, target, positions=None, photometry_file=None,
+                      output_dir=None, position_source=None,
+                      position_column="auto", surveys=None, layer=DEFAULT_LAYER,
+                      size_arcsec=DEFAULT_SIZE_ARCSEC,
+                      pixscale=DEFAULT_PIXSCALE, bands=DEFAULT_BANDS,
+                      make_comparisons=False,
+                      blink_interval_ms=DEFAULT_BLINK_INTERVAL_MS,
+                      fetcher=_http_get):
+    """Run reference cutout fetch/compare for multiple survey backends."""
+
+    survey_list = _normalize_survey_list(surveys)
+    if not survey_list:
+        survey_list = [DEFAULT_LAYER]
+    outputs = []
+    warnings = []
+    total_cutouts = total_no_coverage = 0
+    output_root = Path(output_dir).expanduser().resolve() if output_dir else None
+    survey_blink_gifs = []
+    for survey in survey_list:
+        survey_output_dir = None
+        if output_root is not None:
+            if len(survey_list) == 1:
+                survey_output_dir = output_root
+            else:
+                survey_output_dir = output_root / _sanitize_label(survey)
+        result = build_reference_cutouts(
+            pp_root, target, positions=positions, photometry_file=photometry_file,
+            output_dir=survey_output_dir, position_source=position_source,
+            position_column=position_column, survey=survey, layer=layer,
+            size_arcsec=size_arcsec, pixscale=pixscale, bands=bands,
+            make_comparisons=make_comparisons,
+            blink_interval_ms=blink_interval_ms, fetcher=fetcher)
+        total_cutouts += result["n_cutouts"]
+        total_no_coverage += result["n_no_coverage"]
+        warnings.extend(result["warnings"])
+        outputs.append(result)
+    if len(outputs) >= 2:
+        survey_blink_gifs = _build_survey_blinks(outputs, output_root,
+                                                 blink_interval_ms)
+    return {
+        "surveys": survey_list,
+        "output_root": str(output_root) if output_root is not None else None,
+        "results": outputs,
+        "survey_blink_gifs": survey_blink_gifs,
+        "position_source": position_source,
+        "n_positions": outputs[0]["n_positions"] if outputs else 0,
+        "n_cutouts": total_cutouts,
+        "n_no_coverage": total_no_coverage,
+        "warnings": warnings,
+    }
+
+
 def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="fetch deep Legacy Surveys reference cutouts at reported "
                     "positions (static-source sanity check before MPC files)")
     parser.add_argument("pp_root", help="PP output root")
-    parser.add_argument("--target", required=True, help="target name")
+    parser.add_argument("--target", default=None,
+                        help="target name (required unless --cutout is used)")
+    parser.add_argument("--cutout", action="append", default=[],
+                        help="source FITS cutout to center on; repeatable")
     parser.add_argument("--positions", help="positions CSV (PP or SBSAR click "
                                             "export); default uses PP photometry")
     parser.add_argument("--photometry-file", help="specific PP photometry file")
@@ -486,6 +723,7 @@ def build_arg_parser():
     parser.add_argument("--survey", default=None,
                         help="comparison survey backend: ls-dr10 (default; "
                              "shares DECam lineage), ls-dr9, or ps1 "
+                             "(comma-separated for multiple; des is alias for ls-dr10). "
                              "(independent Pan-STARRS1 stack)")
     parser.add_argument("--layer", default=DEFAULT_LAYER,
                         help="Legacy Surveys layer when --survey is a Legacy "
@@ -504,15 +742,46 @@ def build_arg_parser():
 
 def main(argv=None):
     args = build_arg_parser().parse_args(argv)
-    result = build_reference_cutouts(
-        args.pp_root, args.target, positions=args.positions,
-        photometry_file=args.photometry_file, output_dir=args.output_dir,
-        position_source=args.position_source,
-        position_column=args.position_column, survey=args.survey,
-        layer=args.layer,
-        size_arcsec=args.size_arcsec, pixscale=args.pixscale, bands=args.bands,
-        make_comparisons=args.comparisons,
-        blink_interval_ms=args.blink_interval_ms)
+    if args.photometry_file and args.cutout:
+        raise SystemExit("--cutout cannot be combined with --photometry-file")
+    if args.positions and args.cutout:
+        raise SystemExit("--cutout cannot be combined with --positions")
+    if not args.target and not args.cutout:
+        raise SystemExit("--target is required unless --cutout is provided")
+
+    if args.cutout:
+        positions = _specs_from_cutout_paths(args.cutout)
+        position_source = args.position_source or "cutout"
+        if args.target is None:
+            args.target = _infer_target_from_cutout_path(args.cutout[0])
+        surveys = _normalize_survey_list(
+            args.survey if args.survey is not None else ",".join(DEFAULT_SURVEY_CHOICES))
+    else:
+        positions = args.positions
+        position_source = args.position_source
+        surveys = _normalize_survey_list(args.survey)
+
+    make_comparisons = args.comparisons or bool(args.cutout)
+
+    if len(surveys) == 1:
+        result = build_reference_cutouts(
+            args.pp_root, args.target, positions=positions,
+            photometry_file=args.photometry_file, output_dir=args.output_dir,
+            position_source=position_source,
+            position_column=args.position_column, survey=surveys[0],
+            layer=args.layer,
+            size_arcsec=args.size_arcsec, pixscale=args.pixscale,
+            bands=args.bands, make_comparisons=make_comparisons,
+            blink_interval_ms=args.blink_interval_ms)
+    else:
+        result = _run_multi_surveys(
+            args.pp_root, args.target, positions=positions,
+            photometry_file=args.photometry_file, output_dir=args.output_dir,
+            position_source=position_source, position_column=args.position_column,
+            surveys=surveys, layer=args.layer,
+            size_arcsec=args.size_arcsec, pixscale=args.pixscale,
+            bands=args.bands, make_comparisons=make_comparisons,
+            blink_interval_ms=args.blink_interval_ms)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

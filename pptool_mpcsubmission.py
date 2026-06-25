@@ -9,6 +9,7 @@ import csv
 import json
 import math
 import os
+import shlex
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -44,6 +45,8 @@ DEFAULT_PROGRAM_CODES_URL = (
 DEFAULT_PROGRAM_CODES_CACHE = (
     Path(__file__).resolve().parent / ".cache" / "mpc_program_codes.json"
 )
+DEFAULT_MPC_XML_LIVE_ENDPOINT = "https://minorplanetcenter.net/submit_xml"
+DEFAULT_MPC_XML_OBJ_TYPE = "tno"
 DEFAULT_ADES_SCHEMA_URL = (
     "https://raw.githubusercontent.com/IAU-ADES/ADES-Master/master/"
     "xsd/submit.xsd"
@@ -292,10 +295,12 @@ class SubmissionBundle:
     ades_xml_text: str
     obs80_text: str
     summary_text: str
+    submit_script_text: str
     ades_path: Path
     ades_xml_path: Path
     obs80_path: Path
     summary_path: Path
+    submit_script_path: Path
     orbit_solver_input_snapshots: list[dict[str, object]] = field(
         default_factory=list)
     orbit_solver_input_manifest_path: Path | None = None
@@ -1471,6 +1476,178 @@ def output_paths(
     )
 
 
+def submit_script_path_for_ades_xml(ades_xml_path: Path) -> Path:
+    """Return the shell-script sidecar path for one ADES XML file."""
+
+    return ades_xml_path.with_name("submit_%s.sh" % ades_xml_path.stem)
+
+
+def _strip_xml_namespace(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _xml_element_text(root: ET.Element, name: str) -> str | None:
+    for element in root.iter():
+        if _strip_xml_namespace(element.tag) == name:
+            text = element.text.strip() if element.text else ""
+            if text:
+                return text
+    return None
+
+
+def read_generated_ades_xml_summary(ades_xml_text: str) -> tuple[str, str]:
+    """Return target and observatory code from generated ADES XML text."""
+
+    try:
+        root = ET.fromstring(ades_xml_text)
+    except ET.ParseError as exc:
+        raise SubmissionError("could not parse generated ADES XML: %s" %
+                              exc) from exc
+
+    target = (
+        _xml_element_text(root, "provID") or
+        _xml_element_text(root, "permID") or
+        _xml_element_text(root, "trkSub")
+    )
+    observatory_code = (
+        _xml_element_text(root, "stn") or
+        _xml_element_text(root, "mpcCode")
+    )
+    if not target:
+        raise SubmissionError(
+            "could not find provID, permID, or trkSub in generated ADES XML")
+    if not observatory_code:
+        raise SubmissionError(
+            "could not find stn or mpcCode in generated ADES XML")
+    return normalize_target(target), observatory_code.strip().upper()
+
+
+def resolve_submit_script_prog(observatory_code: str,
+                               config: SubmissionConfig) -> str:
+    """Return the required base-62 MPC XML submission ``prog`` value."""
+
+    site_code = str(observatory_code).strip().upper()
+    configured_code = str(config.prog or "").strip()
+    sbsar_entry = read_sbsar_program_code_entries(
+        config.program_codes_sbsar_csv).get(site_code, {})
+    if sbsar_entry.get("base62_code"):
+        return sbsar_entry["base62_code"]
+
+    try:
+        prog = lookup_mpc_program_code_base62(
+            site_code,
+            program_code=configured_code or None,
+            contact_name=config.program_code_contact,
+            cache_path=_program_code_cache_path(config),
+            refresh=config.refresh_program_codes,
+        )
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError,
+            SubmissionError) as exc:
+        raise SubmissionError(
+            "could not resolve MPC XML prog for observatory %s: %s" %
+            (site_code, exc)) from exc
+    if prog:
+        return prog
+    if configured_code and len(configured_code) > 1:
+        return configured_code
+    if configured_code:
+        raise SubmissionError(
+            "could not resolve base-62 MPC XML prog for observatory %s "
+            "and program code %s" % (site_code, configured_code))
+    raise SubmissionError(
+        "could not resolve MPC XML prog for observatory %s and contact %s" %
+        (site_code, config.program_code_contact))
+
+
+def format_submit_script(ades_xml_text: str,
+                         ades_xml_path: Path,
+                         config: SubmissionConfig) -> str:
+    """Return an executable shell script for live MPC ADES XML submission."""
+
+    target, observatory_code = read_generated_ades_xml_summary(ades_xml_text)
+    ack = "%s %s" % (target, DEFAULT_ACK_SUFFIX)
+    prog = resolve_submit_script_prog(observatory_code, config)
+    source_filename = ades_xml_path.name
+
+    assignments = {
+        "ENDPOINT": DEFAULT_MPC_XML_LIVE_ENDPOINT,
+        "TARGET": target,
+        "OBSERVATORY_CODE": observatory_code,
+        "ACK": ack,
+        "AC2": DEFAULT_AC2_CONTACTS,
+        "OBJ_TYPE": DEFAULT_MPC_XML_OBJ_TYPE,
+        "PROG": prog,
+        "SOURCE_FILE": source_filename,
+        "SOURCE_FORM": "source=<%s" % source_filename,
+    }
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+    ]
+    lines.extend("%s=%s" % (key, shlex.quote(value))
+                 for key, value in assignments.items())
+    lines.extend([
+        "NO_INTERACTION=0",
+        "",
+        "while (($#)); do",
+        "  case \"$1\" in",
+        "    --no-interaction)",
+        "      NO_INTERACTION=1",
+        "      ;;",
+        "    *)",
+        "      echo \"ERROR: unknown option: $1\" >&2",
+        "      exit 2",
+        "      ;;",
+        "  esac",
+        "  shift",
+        "done",
+        "",
+        "SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+        "cd \"$SCRIPT_DIR\"",
+        "",
+        "if [[ ! -f \"$SOURCE_FILE\" ]]; then",
+        "  echo \"ERROR: ADES XML file not found: $SOURCE_FILE\" >&2",
+        "  exit 1",
+        "fi",
+        "",
+        "CURL_ARGS=(",
+        "  curl \"$ENDPOINT\"",
+        "  -F \"ack=$ACK\"",
+        "  -F \"ac2=$AC2\"",
+        "  -F \"obj_type=$OBJ_TYPE\"",
+        "  -F \"prog=$PROG\"",
+        "  -F \"$SOURCE_FORM\"",
+        ")",
+        "",
+        "echo \"About to submit ADES XML to the MPC live endpoint.\"",
+        "echo \"Target: $TARGET\"",
+        "echo \"Observatory code: $OBSERVATORY_CODE\"",
+        "echo \"ACK: $ACK\"",
+        "echo \"AC2: $AC2\"",
+        "echo \"Object type: $OBJ_TYPE\"",
+        "echo \"prog: $PROG\"",
+        "echo \"Endpoint: $ENDPOINT\"",
+        "echo \"Source file: $SOURCE_FILE\"",
+        "echo \"Source form: $SOURCE_FORM\"",
+        "echo \"Curl command:\"",
+        "printf '  '",
+        "printf '%q ' \"${CURL_ARGS[@]}\"",
+        "printf '\\n'",
+        "",
+        "if [[ \"$NO_INTERACTION\" != \"1\" ]]; then",
+        "  read -r -p \"Type \\\"submit\\\" to submit to the live MPC endpoint: \" reply",
+        "  if [[ \"$reply\" != \"submit\" ]]; then",
+        "    echo \"Submission cancelled.\"",
+        "    exit 1",
+        "  fi",
+        "fi",
+        "",
+        "\"${CURL_ARGS[@]}\"",
+    ])
+    return "\n".join(lines) + "\n"
+
+
 def _slug_for_filename(text: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip()).strip("_")
     return slug.lower() or "case"
@@ -1564,6 +1741,7 @@ def format_summary(input_path: Path,
                    ades_xml_path: Path,
                    obs80_path: Path,
                    summary_path: Path,
+                   submit_script_path: Path,
                    ades_prog_values: list[str] | None = None,
                    orbit_solver_input_snapshots:
                    list[dict[str, object]] | None = None) -> str:
@@ -1612,6 +1790,7 @@ def format_summary(input_path: Path,
         "ADES XML output: %s" % ades_xml_path,
         "80-column output: %s" % obs80_path,
         "Summary output: %s" % summary_path,
+        "MPC XML submit script: %s" % submit_script_path,
         "ADES-only fields not represented in 80-column: %s" %
         ", ".join(ades_only),
         "Orbit-solver accepted inputs:",
@@ -1643,8 +1822,11 @@ def build_submission(input_path: Path,
     warnings.extend(validate_observations(observations, config))
     ades_path, ades_xml_path, obs80_path, summary_path = output_paths(
         input_path, config)
+    submit_script_path = submit_script_path_for_ades_xml(ades_xml_path)
     ades_text = format_ades_psv(observations, config)
     ades_xml_text = format_ades_xml_from_psv(ades_text)
+    submit_script_text = format_submit_script(
+        ades_xml_text, ades_xml_path, config)
     obs80_text = format_obs80(observations, config)
     _, ades_rows = _parse_psv_table(ades_text)
     ades_prog_values = _unique_preserve_order(
@@ -1654,7 +1836,8 @@ def build_submission(input_path: Path,
             obs80_path.parent, config.target))
     summary_text = format_summary(input_path, observations, config, warnings,
                                   ades_path, ades_xml_path, obs80_path,
-                                  summary_path, ades_prog_values,
+                                  summary_path, submit_script_path,
+                                  ades_prog_values,
                                   orbit_solver_input_snapshots)
     return SubmissionBundle(
         observations=observations,
@@ -1663,10 +1846,12 @@ def build_submission(input_path: Path,
         ades_xml_text=ades_xml_text,
         obs80_text=obs80_text,
         summary_text=summary_text,
+        submit_script_text=submit_script_text,
         ades_path=ades_path,
         ades_xml_path=ades_xml_path,
         obs80_path=obs80_path,
         summary_path=summary_path,
+        submit_script_path=submit_script_path,
         orbit_solver_input_snapshots=orbit_solver_input_snapshots,
         orbit_solver_input_manifest_path=orbit_solver_input_manifest_path,
     )
@@ -1677,13 +1862,16 @@ def write_submission(bundle: SubmissionBundle) -> None:
 
     for path in (
             bundle.ades_path, bundle.ades_xml_path, bundle.obs80_path,
-            bundle.summary_path):
+            bundle.summary_path, bundle.submit_script_path):
         path.parent.mkdir(parents=True, exist_ok=True)
 
     bundle.ades_path.write_text(bundle.ades_text)
     bundle.ades_xml_path.write_text(bundle.ades_xml_text)
     bundle.obs80_path.write_text(bundle.obs80_text)
     bundle.summary_path.write_text(bundle.summary_text)
+    bundle.submit_script_path.write_text(bundle.submit_script_text)
+    bundle.submit_script_path.chmod(
+        bundle.submit_script_path.stat().st_mode | 0o111)
     if bundle.orbit_solver_input_snapshots:
         for snapshot in bundle.orbit_solver_input_snapshots:
             source_path = Path(str(snapshot["source_path"]))
@@ -1786,6 +1974,7 @@ def main(argv: list[str] | None = None) -> int:
     print("ADES XML: %s" % bundle.ades_xml_path)
     print("80-column: %s" % bundle.obs80_path)
     print("Summary: %s" % bundle.summary_path)
+    print("Submit script: %s" % bundle.submit_script_path)
     if bundle.orbit_solver_input_snapshots:
         print("Orbit-solver accepted inputs: %d" %
               len(bundle.orbit_solver_input_snapshots))

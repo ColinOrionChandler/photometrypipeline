@@ -472,8 +472,9 @@ Functions that provide additional functionality:
       python pptool_mpcsubmission.py /path/to/2016_CJ155 --target "2016 CJ155"
 
    The default output names are
-   ``mpc_<targetname>_ADES.psv``, ``mpc_<targetname>_80col.txt``,
-   and ``mpc_<targetname>_summary.txt``. ADES output preserves the
+   ``mpc_<targetname>_ADES.psv``, ``mpc_<targetname>_ADES.xml``,
+   ``mpc_<targetname>_80col.txt``, ``mpc_<targetname>_summary.txt``,
+   and ``submit_mpc_<targetname>_ADES.sh``. ADES output preserves the
    richer uncertainty, exposure-time, seeing, photometric-catalog, and
    FITS-provenance fields; the summary file explicitly lists the
    ADES-only values that cannot be represented in the 80-column
@@ -481,8 +482,14 @@ Functions that provide additional functionality:
    header always includes ``ACK <target> Small Body Search and Rescue`` and
    ``AC2 coc123@uw.edu, murtagh@uw.edu``. Comma- or semicolon-separated
    measurer strings are split into individual ADES measurer records and are
-   joined on the 80-column ``MEA`` line. When total astrometric uncertainties
-   are missing, the validation step falls back to source-measurement
+   joined on the 80-column ``MEA`` line. The generated shell script posts the
+   ADES XML to the live MPC XML endpoint with a relative
+   ``source=<mpc_<targetname>_ADES.xml`` form field, prints the ACK, AC2,
+   object type, resolved base-62 ``prog``, and curl command, and requires the
+   user to type ``submit`` unless ``--no-interaction`` is passed to the
+   script. If the site program code cannot be resolved, submission generation
+   fails instead of writing an incomplete live-submit command. When total
+   astrometric uncertainties are missing, the validation step falls back to source-measurement
    uncertainties and records the substitution in the summary. If successful
    MPFit or BandK2000 run inputs are found under
    ``orbit_solver_runs/<target>`` near the output directory, the accepted

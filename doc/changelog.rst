@@ -4,6 +4,13 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-06-25: ``pptool_mpcsubmission.py`` now writes an executable
+  ``submit_mpc_<target>_ADES.sh`` sidecar next to each generated ADES XML
+  file. The script targets the live MPC XML endpoint, prints the resolved
+  ACK/AC2/object-type/program-code fields and curl command, requires typing
+  ``submit`` unless ``--no-interaction`` is passed, and fails generation if
+  the site code cannot be mapped to the MPC XML base-62 ``prog`` value.
+
 * 2026-06-15: ``pptool_mpcsubmission.py`` now snapshots successful
   MPFit/BandK2000 ``*.obs80`` inputs next to generated ADES and
   80-column submission files, with a JSON manifest. New solver-specific

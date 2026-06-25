@@ -32,6 +32,22 @@ PERMISSIVE_ADES_SCHEMA = """<?xml version="1.0"?>
 """
 
 
+@pytest.fixture
+def program_codes_csv(tmp_path):
+    csv_path = tmp_path / "sbsar_program_codes.csv"
+    csv_path.write_text(
+        "site_code,program_code,base62_code\n"
+        "W84,Q,0w\n"
+        "568,c,18\n")
+    return csv_path
+
+
+@pytest.fixture(autouse=True)
+def default_program_codes_csv(program_codes_csv, monkeypatch):
+    monkeypatch.setattr(
+        mpcsub, "DEFAULT_SBSAR_PROGRAM_CODES_CSV", program_codes_csv)
+
+
 def write_test_fits(path):
     header = fits.Header()
     header["OBSERVER"] = "Beaudin, Moustakas, Blum"
@@ -106,7 +122,8 @@ def test_target_filename_and_packed_designation():
         "K16CF5J")
 
 
-def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
+def test_builds_ades_and_80col_from_synthetic_pp_output(
+        tmp_path, monkeypatch, program_codes_csv):
     monkeypatch.setattr(mpcsub, "fetch_program_codes", lambda *a, **k: [])
     photometry = tmp_path / "photometry_2016_CJ155.dat"
     photometry.write_text(PHOTOMETRY_TEXT)
@@ -114,7 +131,7 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
 
     config = mpcsub.SubmissionConfig(
         target="2016 CJ155",
-        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        program_codes_sbsar_csv=program_codes_csv,
         output_dir=tmp_path)
     bundle = mpcsub.build_submission(tmp_path, config)
 
@@ -151,6 +168,8 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
     assert bundle.ades_path.exists()
     assert bundle.ades_xml_path.exists()
     assert bundle.obs80_path.exists()
+    assert bundle.submit_script_path.exists()
+    assert bundle.submit_script_path.stat().st_mode & 0o111
 
     obs_lines = [
         line for line in bundle.obs80_text.splitlines()
@@ -162,7 +181,7 @@ def test_builds_ades_and_80col_from_synthetic_pp_output(tmp_path, monkeypatch):
 
 
 def test_submission_snapshots_successful_mpfit_input_next_to_outputs(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, program_codes_csv):
     monkeypatch.setattr(mpcsub, "fetch_program_codes", lambda *a, **k: [])
     output_dir = tmp_path / "submission"
     output_dir.mkdir()
@@ -183,7 +202,7 @@ def test_submission_snapshots_successful_mpfit_input_next_to_outputs(
 
     config = mpcsub.SubmissionConfig(
         target="2016 CJ155",
-        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        program_codes_sbsar_csv=program_codes_csv,
         output_dir=output_dir)
     bundle = mpcsub.build_submission(output_dir, config)
     mpcsub.write_submission(bundle)
@@ -369,6 +388,82 @@ def test_program_code_lookup_uses_mpc_cache_for_punctuation_code(tmp_path):
     assert mpcsub.resolve_program_code(config, []) == "&"
     config.prog = "&"
     assert mpcsub.resolve_ades_program_code(config, []) == "0F"
+
+
+def test_generated_submit_script_contains_live_mpc_form_fields(
+        tmp_path, program_codes_csv):
+    photometry = tmp_path / "photometry_2025_NN80.dat"
+    photometry.write_text(PHOTOMETRY_TEXT.replace("2016_CJ155", "2025_NN80"))
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2025 NN80",
+        observatory_code="W84",
+        program_codes_sbsar_csv=program_codes_csv,
+        output_dir=tmp_path)
+    bundle = mpcsub.build_submission(tmp_path, config)
+
+    assert bundle.submit_script_path.name == "submit_mpc_2025_NN80_ADES.sh"
+    assert bundle.submit_script_text.startswith("#!/usr/bin/env bash\n")
+    assert "set -euo pipefail" in bundle.submit_script_text
+    assert "ENDPOINT=https://minorplanetcenter.net/submit_xml" in (
+        bundle.submit_script_text)
+    assert "ACK='2025 NN80 Small Body Search and Rescue'" in (
+        bundle.submit_script_text)
+    assert "AC2='coc123@uw.edu, murtagh@uw.edu'" in (
+        bundle.submit_script_text)
+    assert "OBJ_TYPE=tno" in bundle.submit_script_text
+    assert "PROG=0w" in bundle.submit_script_text
+    assert "SOURCE_FORM='source=<mpc_2025_NN80_ADES.xml'" in (
+        bundle.submit_script_text)
+    assert "--no-interaction" in bundle.submit_script_text
+    assert "Type \\\"submit\\\" to submit" in bundle.submit_script_text
+
+
+def test_submit_script_generation_fails_when_program_code_missing(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(mpcsub, "fetch_program_codes", lambda *a, **k: [])
+    photometry = tmp_path / "photometry_2025_NN80.dat"
+    photometry.write_text(PHOTOMETRY_TEXT.replace("2016_CJ155", "2025_NN80"))
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="2025 NN80",
+        observatory_code="ZZZ",
+        program_codes_sbsar_csv=tmp_path / "missing.csv",
+        program_codes_cache=tmp_path / "missing_cache.json",
+        output_dir=tmp_path)
+
+    with pytest.raises(mpcsub.SubmissionError, match="could not resolve"):
+        mpcsub.build_submission(tmp_path, config)
+
+
+def test_cli_writes_executable_submit_script(
+        tmp_path, program_codes_csv, capsys):
+    photometry = tmp_path / "photometry_2025_NN80.dat"
+    photometry.write_text(PHOTOMETRY_TEXT.replace("2016_CJ155", "2025_NN80"))
+    write_test_fits(tmp_path / "c4d_test.fits")
+
+    code = mpcsub.main([
+        str(tmp_path),
+        "--target",
+        "2025 NN80",
+        "--observatory-code",
+        "W84",
+        "--program-codes-sbsar-csv",
+        str(program_codes_csv),
+        "--output-dir",
+        str(tmp_path),
+    ])
+    output = capsys.readouterr().out
+    script_path = tmp_path / "submit_mpc_2025_NN80_ADES.sh"
+
+    assert code == 0
+    assert "Submit script: %s" % script_path in output
+    assert script_path.exists()
+    assert script_path.stat().st_mode & 0o111
+    assert "SOURCE_FORM='source=<mpc_2025_NN80_ADES.xml'" in (
+        script_path.read_text())
 
 
 def test_program_code_lookup_missing_warns_and_leaves_blank(tmp_path,

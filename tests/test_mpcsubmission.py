@@ -416,6 +416,12 @@ def test_generated_submit_script_contains_live_mpc_form_fields(
     assert "PROG=0w" in bundle.submit_script_text
     assert "SOURCE_FORM='source=<mpc_2025_NN80_ADES.xml'" in (
         bundle.submit_script_text)
+    assert "CONFIRMATION_FILE=mpc_2025_NN80_submission_confirmation.txt" in (
+        bundle.submit_script_text)
+    assert "RESPONSE=\"$(\"${CURL_ARGS[@]}\")\"" in bundle.submit_script_text
+    assert "MPC submission confirmation" in bundle.submit_script_text
+    assert "Recorded MPC submission confirmation in $CONFIRMATION_FILE" in (
+        bundle.submit_script_text)
     assert "--no-interaction" in bundle.submit_script_text
     assert "Type \\\"submit\\\" to submit" in bundle.submit_script_text
 
@@ -463,6 +469,8 @@ def test_cli_writes_executable_submit_script(
     assert script_path.exists()
     assert script_path.stat().st_mode & 0o111
     assert "SOURCE_FORM='source=<mpc_2025_NN80_ADES.xml'" in (
+        script_path.read_text())
+    assert "CONFIRMATION_FILE=mpc_2025_NN80_submission_confirmation.txt" in (
         script_path.read_text())
 
 

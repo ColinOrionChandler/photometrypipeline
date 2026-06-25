@@ -487,9 +487,12 @@ Functions that provide additional functionality:
    ``source=<mpc_<targetname>_ADES.xml`` form field, prints the ACK, AC2,
    object type, resolved base-62 ``prog``, and curl command, and requires the
    user to type ``submit`` unless ``--no-interaction`` is passed to the
-   script. If the site program code cannot be resolved, submission generation
-   fails instead of writing an incomplete live-submit command. When total
-   astrometric uncertainties are missing, the validation step falls back to source-measurement
+   script. It records the MPC response in
+   ``mpc_<targetname>_submission_confirmation.txt`` next to the XML file. If
+   the site program code cannot be resolved, submission generation fails
+   instead of writing an incomplete live-submit command. When total
+   astrometric uncertainties are missing, the validation step falls back to
+   source-measurement
    uncertainties and records the substitution in the summary. If successful
    MPFit or BandK2000 run inputs are found under
    ``orbit_solver_runs/<target>`` near the output directory, the accepted

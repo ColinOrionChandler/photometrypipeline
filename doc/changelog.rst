@@ -8,8 +8,9 @@ documented here.
   ``submit_mpc_<target>_ADES.sh`` sidecar next to each generated ADES XML
   file. The script targets the live MPC XML endpoint, prints the resolved
   ACK/AC2/object-type/program-code fields and curl command, requires typing
-  ``submit`` unless ``--no-interaction`` is passed, and fails generation if
-  the site code cannot be mapped to the MPC XML base-62 ``prog`` value.
+  ``submit`` unless ``--no-interaction`` is passed, records the MPC response
+  in ``mpc_<target>_submission_confirmation.txt``, and fails generation if the
+  site code cannot be mapped to the MPC XML base-62 ``prog`` value.
 
 * 2026-06-15: ``pptool_mpcsubmission.py`` now snapshots successful
   MPFit/BandK2000 ``*.obs80`` inputs next to generated ADES and

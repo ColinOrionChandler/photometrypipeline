@@ -1482,6 +1482,15 @@ def submit_script_path_for_ades_xml(ades_xml_path: Path) -> Path:
     return ades_xml_path.with_name("submit_%s.sh" % ades_xml_path.stem)
 
 
+def submit_confirmation_filename_for_ades_xml(ades_xml_path: Path) -> str:
+    """Return the adjacent MPC response confirmation filename."""
+
+    stem = ades_xml_path.stem
+    if stem.endswith("_ADES"):
+        stem = stem[:-5]
+    return "%s_submission_confirmation.txt" % stem
+
+
 def _strip_xml_namespace(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
@@ -1568,6 +1577,8 @@ def format_submit_script(ades_xml_text: str,
     ack = "%s %s" % (target, DEFAULT_ACK_SUFFIX)
     prog = resolve_submit_script_prog(observatory_code, config)
     source_filename = ades_xml_path.name
+    confirmation_filename = submit_confirmation_filename_for_ades_xml(
+        ades_xml_path)
 
     assignments = {
         "ENDPOINT": DEFAULT_MPC_XML_LIVE_ENDPOINT,
@@ -1579,6 +1590,7 @@ def format_submit_script(ades_xml_text: str,
         "PROG": prog,
         "SOURCE_FILE": source_filename,
         "SOURCE_FORM": "source=<%s" % source_filename,
+        "CONFIRMATION_FILE": confirmation_filename,
     }
     lines = [
         "#!/usr/bin/env bash",
@@ -1630,6 +1642,7 @@ def format_submit_script(ades_xml_text: str,
         "echo \"Endpoint: $ENDPOINT\"",
         "echo \"Source file: $SOURCE_FILE\"",
         "echo \"Source form: $SOURCE_FORM\"",
+        "echo \"Confirmation file: $CONFIRMATION_FILE\"",
         "echo \"Curl command:\"",
         "printf '  '",
         "printf '%q ' \"${CURL_ARGS[@]}\"",
@@ -1643,7 +1656,13 @@ def format_submit_script(ades_xml_text: str,
         "  fi",
         "fi",
         "",
-        "\"${CURL_ARGS[@]}\"",
+        "RESPONSE=\"$(\"${CURL_ARGS[@]}\")\"",
+        "printf '%s\\n' \"$RESPONSE\"",
+        "{",
+        "  echo \"MPC submission confirmation\"",
+        "  printf '%s\\n' \"$RESPONSE\"",
+        "} > \"$CONFIRMATION_FILE\"",
+        "echo \"Recorded MPC submission confirmation in $CONFIRMATION_FILE\"",
     ])
     return "\n".join(lines) + "\n"
 

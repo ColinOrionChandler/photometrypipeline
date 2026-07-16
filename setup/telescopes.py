@@ -2491,6 +2491,48 @@ vltfors2_param = {
     'photometry_catalogs': ['SDSS-R9', 'PANSTARRS', 'APASS9']
 }
 
+# ESO 3.58-m New Technology Telescope, EFOSC2
+nttefosc2_param = {
+    'telescope_instrument': 'NTT/EFOSC2',
+    'telescope_keyword': 'NTTEFOSC2',
+    'observatory_code': '809',
+    # Native (unbinned) EFOSC2 scale.  PP multiplies this by the detector
+    # binning read from the ESO hierarchical keywords.
+    'secpix': (0.1204, 0.1204),
+    'ext_coeff': 0.05,
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+    'binning': ('ESO DET WIN1 BINX', 'ESO DET WIN1 BINY'),
+    'extent': ('NAXIS1', 'NAXIS2'),
+    'ra': 'RA',
+    'dec': 'DEC',
+    'radec_separator': 'XXX',
+    'date_keyword': 'DATE-OBS',
+    'obsmidtime_jd': 'MIDTIMJD',
+    'object': 'OBJECT',
+    'filter': 'ESO INS FILT1 NAME',
+    'filter_translations': {'r#784': 'r', 'r': 'r'},
+    'exptime': 'EXPTIME',
+    'airmass': 'AIRMASS',
+    'source_minarea': 8,
+    'source_snr': 3,
+    'aprad_default': 4,
+    'aprad_range': [2, 20],
+    'sex-config-file': rootpath+'/setup/vltfors2.sex',
+    'mask_file': {},
+    'scamp-config-file': rootpath+'/setup/vltfors2.scamp',
+    'reg_max_mag': 22,
+    'reg_search_radius': 0.1,
+    'source_tolerance': 'high',
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,RA,DEC,AIRMASS,TEL_KEYW,MIDTIMJD,' +
+                      'ORIGFILE,CLICKX,CLICKY,TARGX,TARGY'),
+    'swarp-config-file': rootpath+'/setup/vltfors2.swarp',
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', 'GAIA']
+}
+
 # VST, OMEGACAM; COC note: maybe we have to pull the chip we want?
 vstomegacam_param = {
     'telescope_instrument': 'VST/OMEGACAM',  # telescope/instrument name; COC verified
@@ -5154,7 +5196,8 @@ implemented_telescopes = ['VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'OHP120',
                           'TNGDOLORES', 'GENERIC', 'KPNO4MOS1', 'FROST',
                           'MEXMAN', 'KPNO4MOS1', 'KPNOMOS3',
-                          'KPNO4NEWF', 'UKIRTWFCAM', 'VLTFORS2', 'OMEGACAM', # COC added omegacam 9/26/2020
+                          'KPNO4NEWF', 'UKIRTWFCAM', 'VLTFORS2',
+                          'NTTEFOSC2', 'OMEGACAM', # COC added omegacam 9/26/2020
                           'LOWELL42SITE', 'PLUTOPLATE', 'TCS15MUSCAT2',
                           'LCOSBIGKB78', 'ARC35SPICAM', 'LCOSINFL03',
                           'LCOSINFL06',
@@ -5219,6 +5262,8 @@ instrument_identifiers = {'Vatt4k':        'VATT4K', # 12/4/2021 COC
                           'SIRIUS': 'IRSFSIRIUS',
                           'Goodman Spectro': 'SOARGOODMAN',
                           'FORS2': 'VLTFORS2',
+                          'EFOSC': 'NTTEFOSC2',
+                          'EFOSC2': 'NTTEFOSC2',
                           'OMEGACAM': 'OMEGACAM',
                           '2:1 f/17 direct': 'LOWELL42SITE',
                           'Pluto plate': 'PLUTOPLATE',
@@ -5320,6 +5365,7 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'UKIRTWFCAM': ukirtwfcam_param,
                         'IRSFSIRIUS': irsfsirius_param,
                         'VLTFORS2': vltfors2_param,
+                        'NTTEFOSC2': nttefosc2_param,
                         'OMEGACAM': vstomegacam_param,
                         'LOWELL42SITE': lowell42site_param,
                         'PLUTOPLATE': plutoplate_param,

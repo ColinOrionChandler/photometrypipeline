@@ -80,6 +80,7 @@ ADES_CATALOG_ALIASES = {
     "PAN-STARRS": "PS1_DR1",
     "PANSTARRS1": "PS1_DR1",
     "PAN-STARRS1": "PS1_DR1",
+    "PANSTARRS_TRANSFORMED": "PS1_DR1",
     "SDSS-R9": "SDSS8",
     "SDSS_R9": "SDSS8",
 }
@@ -270,6 +271,8 @@ class PhotometryObservation:
 @dataclass
 class SubmissionConfig:
     target: str
+    trk_sub: str | None = None
+    review_only: bool = False
     observatory_code: str = DEFAULT_OBSERVATORY_CODE
     astcat: str = DEFAULT_ASTCAT
     photcat: str | None = None
@@ -293,14 +296,14 @@ class SubmissionBundle:
     warnings: list[str]
     ades_text: str
     ades_xml_text: str
-    obs80_text: str
+    obs80_text: str | None
     summary_text: str
-    submit_script_text: str
+    submit_script_text: str | None
     ades_path: Path
     ades_xml_path: Path
-    obs80_path: Path
+    obs80_path: Path | None
     summary_path: Path
-    submit_script_path: Path
+    submit_script_path: Path | None
     orbit_solver_input_snapshots: list[dict[str, object]] = field(
         default_factory=list)
     orbit_solver_input_manifest_path: Path | None = None
@@ -1129,7 +1132,8 @@ def format_ades_psv(observations: list[PhotometryObservation],
         "|".join(fieldnames),
     ])
 
-    prov_id = normalize_target(config.target)
+    prov_id = "" if config.trk_sub else normalize_target(config.target)
+    trk_sub = (config.trk_sub or "").strip()
     active_catalogs, deprecated_catalogs = load_ades_catalog_values()
     for obs in observations:
         raw_photcat = config.photcat or obs.phot_cat
@@ -1145,7 +1149,7 @@ def format_ades_psv(observations: list[PhotometryObservation],
         values = {
             "permID": "",
             "provID": prov_id,
-            "trkSub": "",
+            "trkSub": trk_sub,
             "mode": "CCD",
             "stn": config.observatory_code,
             "obsTime": _format_time(obs.obs_time),
@@ -1758,9 +1762,9 @@ def format_summary(input_path: Path,
                    warnings: list[str],
                    ades_path: Path,
                    ades_xml_path: Path,
-                   obs80_path: Path,
+                   obs80_path: Path | None,
                    summary_path: Path,
-                   submit_script_path: Path,
+                   submit_script_path: Path | None,
                    ades_prog_values: list[str] | None = None,
                    orbit_solver_input_snapshots:
                    list[dict[str, object]] | None = None) -> str:
@@ -1786,8 +1790,11 @@ def format_summary(input_path: Path,
     lines = [
         "MPC submission sidecar summary",
         "Target: %s" % normalize_target(config.target),
-        "Packed target: %s" %
-        pack_minor_planet_provisional_designation(config.target),
+        "Identifier: %s" % (
+            "trkSub=%s" % config.trk_sub if config.trk_sub else
+            "provID=%s" % normalize_target(config.target)),
+        "Submission-ready: %s" % ("no (review only)" if config.review_only
+                                    else "yes"),
         "Input: %s" % input_path.expanduser().resolve(),
         "Observations: %d" % len(observations),
         "Astrometry-only observations: %d" %
@@ -1807,9 +1814,13 @@ def format_summary(input_path: Path,
         ("yes" if config.non_survey_measurer else "no"),
         "ADES PSV output: %s" % ades_path,
         "ADES XML output: %s" % ades_xml_path,
-        "80-column output: %s" % obs80_path,
+        "80-column output: %s" % (
+            obs80_path if obs80_path is not None else
+            "(not generated for temporary tracklet)"),
         "Summary output: %s" % summary_path,
-        "MPC XML submit script: %s" % submit_script_path,
+        "MPC XML submit script: %s" % (
+            submit_script_path if submit_script_path is not None else
+            "(suppressed in review-only mode)"),
         "ADES-only fields not represented in 80-column: %s" %
         ", ".join(ades_only),
         "Orbit-solver accepted inputs:",
@@ -1836,23 +1847,38 @@ def build_submission(input_path: Path,
     """Build ADES, 80-column, and summary text for a PP output tree."""
 
     warnings = []
-    config.prog = resolve_program_code(config, warnings)
+    if config.review_only:
+        if not config.prog:
+            warnings.append(
+                "review-only mode leaves the MPC program code blank")
+        warnings.append(
+            "review-only output is not submission-ready and no live-submit "
+            "script was generated")
+    else:
+        config.prog = resolve_program_code(config, warnings)
     observations = collect_observations(input_path, config, warnings)
     warnings.extend(validate_observations(observations, config))
     ades_path, ades_xml_path, obs80_path, summary_path = output_paths(
         input_path, config)
-    submit_script_path = submit_script_path_for_ades_xml(ades_xml_path)
+    submit_script_path = (None if config.review_only else
+                          submit_script_path_for_ades_xml(ades_xml_path))
     ades_text = format_ades_psv(observations, config)
     ades_xml_text = format_ades_xml_from_psv(ades_text)
-    submit_script_text = format_submit_script(
-        ades_xml_text, ades_xml_path, config)
-    obs80_text = format_obs80(observations, config)
+    submit_script_text = (None if config.review_only else
+                          format_submit_script(
+                              ades_xml_text, ades_xml_path, config))
+    if config.trk_sub:
+        obs80_text = None
+        obs80_path = None
+    else:
+        obs80_text = format_obs80(observations, config)
     _, ades_rows = _parse_psv_table(ades_text)
     ades_prog_values = _unique_preserve_order(
         row.get("prog", "") for row in ades_rows if row.get("prog", ""))
     orbit_solver_input_snapshots, orbit_solver_input_manifest_path = (
         discover_orbit_solver_input_snapshots(
-            obs80_path.parent, config.target))
+            ades_path.parent, config.target) if obs80_path is not None else
+        ([], None))
     summary_text = format_summary(input_path, observations, config, warnings,
                                   ades_path, ades_xml_path, obs80_path,
                                   summary_path, submit_script_path,
@@ -1882,15 +1908,20 @@ def write_submission(bundle: SubmissionBundle) -> None:
     for path in (
             bundle.ades_path, bundle.ades_xml_path, bundle.obs80_path,
             bundle.summary_path, bundle.submit_script_path):
+        if path is None:
+            continue
         path.parent.mkdir(parents=True, exist_ok=True)
 
     bundle.ades_path.write_text(bundle.ades_text)
     bundle.ades_xml_path.write_text(bundle.ades_xml_text)
-    bundle.obs80_path.write_text(bundle.obs80_text)
+    if bundle.obs80_path is not None and bundle.obs80_text is not None:
+        bundle.obs80_path.write_text(bundle.obs80_text)
     bundle.summary_path.write_text(bundle.summary_text)
-    bundle.submit_script_path.write_text(bundle.submit_script_text)
-    bundle.submit_script_path.chmod(
-        bundle.submit_script_path.stat().st_mode | 0o111)
+    if (bundle.submit_script_path is not None and
+            bundle.submit_script_text is not None):
+        bundle.submit_script_path.write_text(bundle.submit_script_text)
+        bundle.submit_script_path.chmod(
+            bundle.submit_script_path.stat().st_mode | 0o111)
     if bundle.orbit_solver_input_snapshots:
         for snapshot in bundle.orbit_solver_input_snapshots:
             source_path = Path(str(snapshot["source_path"]))
@@ -1915,6 +1946,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="PP output directory or photometry file")
     parser.add_argument("--target", required=True,
                         help="target designation, e.g. '2016 CJ155'")
+    parser.add_argument("--trk-sub",
+                        help="temporary tracklet identifier; writes trkSub "
+                             "instead of provID")
+    parser.add_argument("--review-only", action="store_true",
+                        help="generate review artifacts without a live-submit "
+                             "script or automatic program-code lookup")
     parser.add_argument("--measurer", default=DEFAULT_MEASURER)
     parser.add_argument("--submitter", default=DEFAULT_SUBMITTER)
     parser.add_argument("--contact", default=DEFAULT_CONTACT)
@@ -1957,6 +1994,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     config = SubmissionConfig(
         target=args.target,
+        trk_sub=args.trk_sub,
+        review_only=args.review_only,
         observatory_code=args.observatory_code,
         astcat=args.astcat,
         photcat=args.photcat,
@@ -1991,9 +2030,11 @@ def main(argv: list[str] | None = None) -> int:
           (action, len(bundle.observations), normalize_target(config.target)))
     print("ADES PSV: %s" % bundle.ades_path)
     print("ADES XML: %s" % bundle.ades_xml_path)
-    print("80-column: %s" % bundle.obs80_path)
+    if bundle.obs80_path is not None:
+        print("80-column: %s" % bundle.obs80_path)
     print("Summary: %s" % bundle.summary_path)
-    print("Submit script: %s" % bundle.submit_script_path)
+    if bundle.submit_script_path is not None:
+        print("Submit script: %s" % bundle.submit_script_path)
     if bundle.orbit_solver_input_snapshots:
         print("Orbit-solver accepted inputs: %d" %
               len(bundle.orbit_solver_input_snapshots))

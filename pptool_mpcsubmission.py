@@ -47,6 +47,16 @@ DEFAULT_PROGRAM_CODES_CACHE = (
 )
 DEFAULT_MPC_XML_LIVE_ENDPOINT = "https://minorplanetcenter.net/submit_xml"
 DEFAULT_MPC_XML_OBJ_TYPE = "tno"
+MPC_XML_OBJ_TYPES = (
+    "unclassified",
+    "neocp",
+    "neo candidate",
+    "neo",
+    "new comet",
+    "comet",
+    "tno",
+    "artsat",
+)
 DEFAULT_ADES_SCHEMA_URL = (
     "https://raw.githubusercontent.com/IAU-ADES/ADES-Master/master/"
     "xsd/submit.xsd"
@@ -281,6 +291,7 @@ class SubmissionConfig:
     contact: str = DEFAULT_CONTACT
     observers: list[str] | None = None
     prog: str | None = None
+    obj_type: str = DEFAULT_MPC_XML_OBJ_TYPE
     program_code_contact: str = DEFAULT_PROGRAM_CODE_CONTACT
     program_codes_cache: Path | None = None
     program_codes_sbsar_csv: Path | None = None
@@ -999,6 +1010,10 @@ def derive_telescope_context(observations: list[PhotometryObservation]) -> tuple
     if "SPACEWATCH09" in telescope_keywords or any(
             "Spacewatch 0.9-m" in telescope for telescope in telescopes):
         return "0.9-m f/3 reflector", "0.9", "CCD"
+    if "ARC35ARCTIC" in telescope_keywords or (
+            "arctic" in {instrument.casefold() for instrument in instruments}
+            and "3.5m" in telescopes):
+        return "ARC 3.5-m telescope", "3.5", "CCD"
     if telescopes:
         design = sorted(telescopes)[0]
     else:
@@ -1063,7 +1078,7 @@ def validate_observations(observations: list[PhotometryObservation],
                             obs.julian_date)
         seen.add(key)
 
-    if config.prog and len(config.prog) != 1:
+    if config.prog and len(config.prog) != 1 and not config.trk_sub:
         warnings.append("program code %r will be included in ADES but left "
                         "blank in 80-column output" % config.prog)
 
@@ -1590,7 +1605,7 @@ def format_submit_script(ades_xml_text: str,
         "OBSERVATORY_CODE": observatory_code,
         "ACK": ack,
         "AC2": DEFAULT_AC2_CONTACTS,
-        "OBJ_TYPE": DEFAULT_MPC_XML_OBJ_TYPE,
+        "OBJ_TYPE": config.obj_type,
         "PROG": prog,
         "SOURCE_FILE": source_filename,
         "SOURCE_FORM": "source=<%s" % source_filename,
@@ -1963,6 +1978,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="override photometric catalog for all rows")
     parser.add_argument("--prog", help="ADES program code; one character is "
                         "also placed in 80-column output")
+    parser.add_argument(
+        "--obj-type",
+        choices=MPC_XML_OBJ_TYPES,
+        default=DEFAULT_MPC_XML_OBJ_TYPE,
+        help="MPC XML submission object type; default: %(default)s",
+    )
     parser.add_argument("--program-code-contact",
                         default=DEFAULT_PROGRAM_CODE_CONTACT,
                         help="contact name used for automatic MPC program "
@@ -2004,6 +2025,7 @@ def main(argv: list[str] | None = None) -> int:
         contact=args.contact,
         observers=args.observers,
         prog=args.prog,
+        obj_type=args.obj_type,
         program_code_contact=args.program_code_contact,
         program_codes_cache=args.program_codes_cache,
         program_codes_sbsar_csv=args.program_codes_sbsar_csv,

@@ -38,7 +38,8 @@ def program_codes_csv(tmp_path):
     csv_path.write_text(
         "site_code,program_code,base62_code\n"
         "W84,Q,0w\n"
-        "568,c,18\n")
+        "568,c,18\n"
+        "705,(,0H\n")
     return csv_path
 
 
@@ -89,6 +90,14 @@ def write_cfht_cfh12k_test_fits(path):
     header["INSTRUME"] = "CFH12K Mosaic"
     header["TEL_KEYW"] = "CFHTCFH12K"
     header["MAGZP"] = 26.169
+    fits.PrimaryHDU(header=header).writeto(path)
+
+
+def write_arc35arctic_test_fits(path):
+    header = fits.Header()
+    header["TELESCOP"] = "3.5m"
+    header["INSTRUME"] = "arctic"
+    header["TEL_KEYW"] = "ARC35ARCTIC"
     fits.PrimaryHDU(header=header).writeto(path)
 
 
@@ -424,6 +433,34 @@ def test_generated_submit_script_contains_live_mpc_form_fields(
         bundle.submit_script_text)
     assert "--no-interaction" in bundle.submit_script_text
     assert "Type \\\"submit\\\" to submit" in bundle.submit_script_text
+
+
+def test_arc35arctic_context_and_new_comet_submit_type(
+        tmp_path, program_codes_csv):
+    photometry = tmp_path / "photometry_McLeod.dat"
+    photometry.write_text(
+        PHOTOMETRY_TEXT.replace("c4d_test", "red_image.0146.new.ldac")
+        .replace("DECam", "ARC35ARCTIC")
+        .replace("2016_CJ155", "McLeod"))
+    write_arc35arctic_test_fits(tmp_path / "red_image.0146.new.fits")
+
+    config = mpcsub.SubmissionConfig(
+        target="McLeod",
+        trk_sub="McLeod",
+        observatory_code="705",
+        prog="0H",
+        obj_type="new comet",
+        program_codes_sbsar_csv=program_codes_csv,
+        output_dir=tmp_path,
+    )
+    bundle = mpcsub.build_submission(photometry, config)
+
+    assert "! design ARC 3.5-m telescope" in bundle.ades_text
+    assert "! aperture 3.5" in bundle.ades_text
+    assert "OBJ_TYPE='new comet'" in bundle.submit_script_text
+    assert "PROG=0H" in bundle.submit_script_text
+    assert not any("80-column output" in warning
+                   for warning in bundle.warnings)
 
 
 def test_submit_script_generation_fails_when_program_code_missing(

@@ -21,6 +21,7 @@ from astropy.nddata.utils import NoOverlapError
 from astropy.visualization import ZScaleInterval
 from astropy.wcs import WCS
 from PIL import Image
+from scipy.ndimage import map_coordinates
 
 from pptool_mpcsubmission import (
     parse_photometry_file,
@@ -31,6 +32,7 @@ from pptool_mpcsubmission import (
 
 DEFAULT_CUTOUT_SIZE_ARCSEC = 126.0
 MANIFEST_NAME = "cutouts.jsonl"
+SUMMARY_NAME = "cutout_summary.json"
 DEFAULT_OUTPUT_BASENAME = "PP_cutouts"
 
 # Right ascension / declination column pairs understood when ingesting an
@@ -164,6 +166,8 @@ def load_positions(positions, position_column="auto"):
             "mag": _float_or_none(row.get("mag")),
             "mag_sig": _float_or_none(row.get("mag_sig")),
             "sextractor_flag": row.get("sextractor_flag"),
+            "position_source": row.get("position_source") or None,
+            "selected_detection": row.get("selected_detection") or None,
         })
     return specs, ra_col
 
@@ -194,10 +198,46 @@ def _pixel_scale_arcsec(wcs):
 
 
 def _cutout_size_pixels(wcs, size_arcsec):
-    pixels = int(round(float(size_arcsec) / _pixel_scale_arcsec(wcs)))
+    return _cutout_size_pixels_for_scale(
+        _pixel_scale_arcsec(wcs), size_arcsec)
+
+
+def _cutout_size_pixels_for_scale(pixel_scale_arcsec, size_arcsec):
+    pixels = int(round(float(size_arcsec) / float(pixel_scale_arcsec)))
     if pixels % 2 == 0:
         pixels += 1
     return max(pixels, 1)
+
+
+def _standard_tan_wcs(target, size_px, pixel_scale_arcsec):
+    """Return a square celestial grid with north up and east left."""
+
+    wcs = WCS(naxis=2)
+    wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    wcs.wcs.cunit = ["deg", "deg"]
+    wcs.wcs.crval = [target.ra.deg, target.dec.deg]
+    center = (int(size_px) + 1) / 2.0
+    wcs.wcs.crpix = [center, center]
+    scale_deg = float(pixel_scale_arcsec) / 3600.0
+    wcs.wcs.cdelt = [-scale_deg, scale_deg]
+    return wcs
+
+
+def _reproject_bilinear(data, source_wcs, output_wcs, size_px):
+    """Bilinearly sample ``data`` onto ``output_wcs``."""
+
+    yy, xx = np.indices((int(size_px), int(size_px)), dtype=float)
+    ra, dec = output_wcs.all_pix2world(xx, yy, 0)
+    source_x, source_y = source_wcs.all_world2pix(ra, dec, 0)
+    sampled = map_coordinates(
+        np.asarray(data, dtype=np.float32),
+        [source_y, source_x],
+        order=1,
+        mode="constant",
+        cval=np.nan,
+        prefilter=False,
+    )
+    return sampled.astype(np.float32)
 
 
 def _centered_blank_wcs(source_wcs, target, size_px):
@@ -260,7 +300,8 @@ def _output_stem(target, row):
         target_to_filename(target), token, jd, digest)
 
 
-def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec):
+def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec,
+                  size_px=None, output_pixel_scale_arcsec=None):
     target = SkyCoord(float(ra_deg) * u.deg, float(dec_deg) * u.deg,
                       frame="icrs")
     with fits.open(str(source_fits), memmap=False,
@@ -270,18 +311,29 @@ def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec):
         source_wcs = WCS(header, relax=True)
 
     x, y = source_wcs.world_to_pixel(target)
-    size_px = _cutout_size_pixels(source_wcs, size_arcsec)
-    try:
-        cutout = Cutout2D(
-            data, position=(x, y), size=(size_px, size_px),
-            wcs=source_wcs, mode="partial", fill_value=np.nan, copy=True)
-        cutout_data = cutout.data.astype(np.float32)
-        cutout_wcs = cutout.wcs
+    source_pixel_scale_arcsec = _pixel_scale_arcsec(source_wcs)
+    if size_px is None:
+        size_px = _cutout_size_pixels(source_wcs, size_arcsec)
+    size_px = int(size_px)
+    if output_pixel_scale_arcsec is not None:
+        cutout_wcs = _standard_tan_wcs(
+            target, size_px, output_pixel_scale_arcsec)
+        cutout_data = _reproject_bilinear(
+            data, source_wcs, cutout_wcs, size_px)
         overlap = bool(np.isfinite(cutout_data).any())
-    except NoOverlapError:
-        cutout_data = np.full((size_px, size_px), np.nan, dtype=np.float32)
-        cutout_wcs = _centered_blank_wcs(source_wcs, target, size_px)
-        overlap = False
+    else:
+        try:
+            cutout = Cutout2D(
+                data, position=(x, y), size=(size_px, size_px),
+                wcs=source_wcs, mode="partial", fill_value=np.nan, copy=True)
+            cutout_data = cutout.data.astype(np.float32)
+            cutout_wcs = cutout.wcs
+            overlap = bool(np.isfinite(cutout_data).any())
+        except NoOverlapError:
+            cutout_data = np.full(
+                (size_px, size_px), np.nan, dtype=np.float32)
+            cutout_wcs = _centered_blank_wcs(source_wcs, target, size_px)
+            overlap = False
 
     inside = (0 <= float(x) < data.shape[1] and 0 <= float(y) < data.shape[0])
     return cutout_data, cutout_wcs, header, {
@@ -290,7 +342,29 @@ def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec):
         "inside": bool(inside),
         "overlap": bool(overlap),
         "size_px": int(size_px),
+        "source_pixel_scale_arcsec": source_pixel_scale_arcsec,
+        "output_pixel_scale_arcsec": (
+            float(output_pixel_scale_arcsec)
+            if output_pixel_scale_arcsec is not None
+            else source_pixel_scale_arcsec),
     }
+
+
+_WCS_KEY_PATTERN = re.compile(
+    r"^(?:WCSAXES|CRPIX\d|PC\d+_\d+|CD\d+_\d+|CDELT\d|CUNIT\d|"
+    r"CTYPE\d|CRVAL\d|LONPOLE|LATPOLE|RADESYS|RADECSYS|EQUINOX|PV\d+_\d+|"
+    r"A_ORDER|B_ORDER|AP_ORDER|BP_ORDER|[AB]P?_\d+_\d+)$")
+
+
+def _replace_celestial_wcs(header, wcs):
+    """Replace stale source-WCS cards with the cutout celestial WCS."""
+
+    output = header.copy()
+    for key in list(output):
+        if _WCS_KEY_PATTERN.match(str(key)):
+            del output[key]
+    output.update(wcs.to_header(relax=True))
+    return output
 
 
 def _resolve_spec_fits(spec, search_dirs):
@@ -368,7 +442,8 @@ def _specs_from_photometry(pp_root, target, photometry_file):
 def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
                      size_arcsec=DEFAULT_CUTOUT_SIZE_ARCSEC,
                      position_source=None, positions=None,
-                     position_column="auto", fits_dir=None):
+                     position_column="auto", fits_dir=None,
+                     north_up_east_left=False, simple_names=False):
     """Create FITS/PNG cutouts centered on reported RA/Dec positions.
 
     By default each active PP photometry row is centered (the PP-measured
@@ -385,7 +460,8 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
                   if output_dir is None
                   else Path(output_dir).expanduser().resolve())
     output_dir.mkdir(parents=True, exist_ok=True)
-    for pattern in ("*_cutout.fits", "*_cutout.png", MANIFEST_NAME):
+    for pattern in ("*_cutout.fits", "*_cutout.png", MANIFEST_NAME,
+                    SUMMARY_NAME):
         for stale in output_dir.glob(pattern):
             stale.unlink()
 
@@ -417,48 +493,80 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
             _specs_from_photometry(pp_root, target, photometry_file)
         warnings.extend(photometry_warnings)
 
+    resolved_specs = []
     for spec in specs:
+        try:
+            source_fits = _resolve_spec_fits(spec, search_dirs)
+            with fits.open(str(source_fits), memmap=False,
+                           ignore_missing_end=True) as hdulist:
+                source_scale = _pixel_scale_arcsec(
+                    WCS(hdulist[0].header, relax=True))
+        except Exception as exc:
+            warnings.append("skipping %s; cannot resolve FITS/WCS: %s" %
+                            (spec.get("catalog_token") or
+                             spec.get("fits_file"), exc))
+            continue
+        resolved_specs.append((spec, source_fits, source_scale))
+
+    common_pixel_scale_arcsec = None
+    common_size_px = None
+    if resolved_specs:
+        common_pixel_scale_arcsec = float(np.median(
+            [row[2] for row in resolved_specs]))
+        common_size_px = _cutout_size_pixels_for_scale(
+            common_pixel_scale_arcsec, size_arcsec)
+
+    for spec, source_fits, source_scale in resolved_specs:
         ra_deg = spec["ra_deg"]
         dec_deg = spec["dec_deg"]
         try:
-            source_fits = _resolve_spec_fits(spec, search_dirs)
-        except Exception as exc:
-            warnings.append("skipping %s; cannot resolve FITS: %s" %
-                            (spec.get("catalog_token") or spec.get("fits_file"),
-                             exc))
-            continue
-        try:
             data, cutout_wcs, source_header, info = _build_cutout(
-                source_fits, ra_deg, dec_deg, size_arcsec)
+                source_fits, ra_deg, dec_deg, size_arcsec,
+                size_px=common_size_px,
+                output_pixel_scale_arcsec=(
+                    common_pixel_scale_arcsec
+                    if north_up_east_left else None))
         except Exception as exc:
             warnings.append("skipping %s; cannot build cutout: %s" %
                             (source_fits, exc))
             continue
 
-        stem = _output_stem(target, spec)
+        if simple_names:
+            token = Path(str(spec.get("catalog_token") or
+                             source_fits.name)).with_suffix("").name
+            stem = "%s_%s" % (target_to_filename(target), token)
+        else:
+            stem = _output_stem(target, spec)
         output_fits = output_dir / ("%s_cutout.fits" % stem)
         output_png = output_dir / ("%s_cutout.png" % stem)
-        header = source_header.copy()
-        header.update(cutout_wcs.to_header(relax=True))
+        header = _replace_celestial_wcs(source_header, cutout_wcs)
         header["CUTSRC"] = (source_fits.name[:68], "source PP image")
         header["CUTSIZE"] = (float(size_arcsec), "cutout size arcsec")
         header["CUTRA"] = (ra_deg, "reported source RA deg")
         header["CUTDEC"] = (dec_deg, "reported source Dec deg")
         header["CUTIN"] = (info["inside"], "target inside source")
         header["CUTOVER"] = (info["overlap"], "cutout overlaps source")
+        header["CUTNAX"] = (info["size_px"], "common cutout axis pixels")
+        header["CUTSCALE"] = (info["output_pixel_scale_arcsec"],
+                              "common output scale arcsec/pixel")
+        header["CUTORNT"] = (("NUP-ELFT" if north_up_east_left else
+                              "NATIVE"), "cutout orientation")
         header["ASTONLY"] = (spec["astrometry_only"],
                              "row lacks usable photometry")
-        if position_source:
-            header["CUTPSRC"] = (str(position_source)[:68],
+        row_position_source = spec.get("position_source") or position_source
+        if row_position_source:
+            header["CUTPSRC"] = (str(row_position_source)[:68],
                                  "cutout position provenance")
         fits.PrimaryHDU(data=data, header=header).writeto(
             output_fits, overwrite=True, output_verify="silentfix")
-        _zscale_rgba(data).save(output_png)
+        png_data = np.flipud(data) if north_up_east_left else data
+        _zscale_rgba(png_data).save(output_png)
 
         manifest_row = {
             "index": len(manifest_rows) + 1,
             "target": target,
-            "position_source": position_source,
+            "position_source": row_position_source,
+            "selected_detection": spec.get("selected_detection"),
             "catalog_token": spec.get("catalog_token"),
             "source_photometry_file": spec.get("source_photometry_file"),
             "source_fits_file": str(source_fits),
@@ -486,6 +594,12 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
             "y": info["y"],
             "size_arcsec": float(size_arcsec),
             "size_px": info["size_px"],
+            "dimensions": [info["size_px"], info["size_px"]],
+            "source_pixel_scale_arcsec": source_scale,
+            "output_pixel_scale_arcsec": info[
+                "output_pixel_scale_arcsec"],
+            "orientation": ("north up, east left" if north_up_east_left
+                            else "native source WCS"),
         }
         manifest_rows.append(manifest_row)
         products.append({
@@ -501,7 +615,7 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
         for row in manifest_rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
-    return {
+    result = {
         "output_dir": str(output_dir),
         "manifest_path": str(manifest_path),
         "position_source": position_source,
@@ -517,9 +631,21 @@ def build_pp_cutouts(pp_root, target, photometry_file=None, output_dir=None,
                                  if row["astrometry_only"]),
         "n_inside": sum(1 for product in products if product["inside"]),
         "n_overlap": sum(1 for product in products if product["overlap"]),
+        "common_dimensions": ([common_size_px, common_size_px]
+                              if common_size_px is not None else None),
+        "common_pixel_scale_arcsec": common_pixel_scale_arcsec,
+        "orientation": ("north up, east left" if north_up_east_left
+                        else "native source WCS"),
         "warnings": warnings,
         "products": products,
     }
+    summary_path = output_dir / SUMMARY_NAME
+    result["summary_path"] = str(summary_path)
+    summary = {key: value for key, value in result.items()
+               if key != "products"}
+    summary_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return result
 
 
 def record_pp_cutouts(manifest, pp_root, target, photometry_file=None,
@@ -568,6 +694,10 @@ def build_arg_parser():
     parser.add_argument("--fits-dir",
                         help="directory to search for source FITS when "
                              "--positions rows lack an explicit fits_file")
+    parser.add_argument("--north-up-east-left", action="store_true",
+                        help="reproject every cutout to one shared TAN grid")
+    parser.add_argument("--simple-names", action="store_true",
+                        help="omit JD/hash suffixes from output filenames")
     return parser
 
 
@@ -577,7 +707,9 @@ def main(argv=None):
         args.pp_root, args.target, photometry_file=args.photometry_file,
         output_dir=args.output_dir, size_arcsec=args.size_arcsec,
         position_source=args.position_source, positions=args.positions,
-        position_column=args.position_column, fits_dir=args.fits_dir)
+        position_column=args.position_column, fits_dir=args.fits_dir,
+        north_up_east_left=args.north_up_east_left,
+        simple_names=args.simple_names)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 from astropy.io import fits
+from astropy.wcs import WCS
+from PIL import Image
 
 from pptool_pp_cutouts import (
     build_pp_cutouts,
@@ -11,7 +14,8 @@ from pptool_pp_cutouts import (
 )
 
 
-def write_wcs_fits(path, ra_deg=144.17425351, dec_deg=13.91718331):
+def write_wcs_fits(path, ra_deg=144.17425351, dec_deg=13.91718331,
+                   pixel_scale_arcsec=1.0):
     header = fits.Header()
     header["SIMPLE"] = True
     header["BITPIX"] = -32
@@ -24,10 +28,10 @@ def write_wcs_fits(path, ra_deg=144.17425351, dec_deg=13.91718331):
     header["CRVAL2"] = dec_deg
     header["CRPIX1"] = 21.0
     header["CRPIX2"] = 21.0
-    header["CD1_1"] = -1.0 / 3600.0
+    header["CD1_1"] = -pixel_scale_arcsec / 3600.0
     header["CD1_2"] = 0.0
     header["CD2_1"] = 0.0
-    header["CD2_2"] = 1.0 / 3600.0
+    header["CD2_2"] = pixel_scale_arcsec / 3600.0
     header["TELESCOP"] = "Synthetic"
     header["INSTRUME"] = "SyntheticCam"
     data = np.arange(41 * 41, dtype=np.float32).reshape(41, 41)
@@ -171,3 +175,32 @@ def test_positions_csv_centers_on_sbsar_centroid(tmp_path):
                                             position_column="click")
     assert click_col == "click_ra_deg"
     assert click_specs[0]["ra_deg"] == click_ra
+
+
+def test_batch_cutouts_share_dimensions_and_standard_orientation(tmp_path):
+    write_wcs_fits(tmp_path / "src1.fits", pixel_scale_arcsec=1.0)
+    write_wcs_fits(tmp_path / "src2.fits", pixel_scale_arcsec=0.8)
+    positions = [
+        {"fits_file": str(tmp_path / "src1.fits"),
+         "ra_deg": 144.17425351, "dec_deg": 13.91718331},
+        {"fits_file": str(tmp_path / "src2.fits"),
+         "ra_deg": 144.17425351, "dec_deg": 13.91718331},
+    ]
+
+    result = build_pp_cutouts(
+        tmp_path, "RMM2026", size_arcsec=10.0, positions=positions,
+        north_up_east_left=True, simple_names=True)
+
+    assert result["n_cutouts"] == 2
+    assert result["common_dimensions"] == [11, 11]
+    fits_paths = sorted((tmp_path / "PP_cutouts").glob("*.fits"))
+    png_paths = sorted((tmp_path / "PP_cutouts").glob("*.png"))
+    assert {fits.getdata(path).shape for path in fits_paths} == {(11, 11)}
+    assert {Image.open(path).size for path in png_paths} == {(11, 11)}
+    for path in fits_paths:
+        header = fits.getheader(path)
+        output_wcs = WCS(header)
+        center = output_wcs.all_pix2world([[5.0, 5.0]], 0)[0]
+        assert center[0] == pytest.approx(144.17425351)
+        assert center[1] == pytest.approx(13.91718331)
+        assert header["CUTORNT"] == "NUP-ELFT"

@@ -1595,6 +1595,10 @@ def format_submit_script(ades_xml_text: str,
     target, observatory_code = read_generated_ades_xml_summary(ades_xml_text)
     ack = "%s %s" % (target, DEFAULT_ACK_SUFFIX)
     prog = resolve_submit_script_prog(observatory_code, config)
+    if not re.fullmatch(r"[0-9A-Za-z]{2}", prog or ""):
+        raise SubmissionError(
+            "required MPC XML prog must be exactly two base-62 characters "
+            "for observatory %s" % observatory_code)
     source_filename = ades_xml_path.name
     confirmation_filename = submit_confirmation_filename_for_ades_xml(
         ades_xml_path)
@@ -1624,7 +1628,8 @@ def format_submit_script(ades_xml_text: str,
         "while (($#)); do",
         "  case \"$1\" in",
         "    --no-interaction)",
-        "      NO_INTERACTION=1",
+        "      echo \"ERROR: --no-interaction is disabled; final program-code confirmation is required.\" >&2",
+        "      exit 2",
         "      ;;",
         "    *)",
         "      echo \"ERROR: unknown option: $1\" >&2",
@@ -1639,6 +1644,11 @@ def format_submit_script(ades_xml_text: str,
         "",
         "if [[ ! -f \"$SOURCE_FILE\" ]]; then",
         "  echo \"ERROR: ADES XML file not found: $SOURCE_FILE\" >&2",
+        "  exit 1",
+        "fi",
+        "",
+        "if [[ ! \"$PROG\" =~ ^[0-9A-Za-z]{2}$ ]]; then",
+        "  echo \"ERROR: a valid two-character MPC program code is required for station $OBSERVATORY_CODE.\" >&2",
         "  exit 1",
         "fi",
         "",
@@ -1673,6 +1683,11 @@ def format_submit_script(ades_xml_text: str,
         "    echo \"Submission cancelled.\"",
         "    exit 1",
         "  fi",
+        "fi",
+        "",
+        "if ! read -r -p \"Final confirmation: type program code $PROG for station $OBSERVATORY_CODE to submit: \" confirmed_prog || [[ \"$confirmed_prog\" != \"$PROG\" ]]; then",
+        "  echo \"Submission cancelled: program code was not confirmed.\" >&2",
+        "  exit 1",
         "fi",
         "",
         "RESPONSE=\"$(\"${CURL_ARGS[@]}\")\"",

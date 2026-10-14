@@ -787,3 +787,53 @@ def test_real_2016_cj155_outputs_both_formats(tmp_path):
     assert len(obs_lines) == 2
     assert all(len(line) == 80 for line in obs_lines)
     assert all(line.endswith("W84") for line in obs_lines)
+
+
+@pytest.mark.parametrize('prog', ['', '4', '000', '0!', ' 04'])
+def test_submit_script_rejects_invalid_resolved_prog(tmp_path, monkeypatch, prog):
+    monkeypatch.setattr(mpcsub, 'read_generated_ades_xml_summary',
+                        lambda text: ('2025 NC6', '691'))
+    monkeypatch.setattr(mpcsub, 'resolve_submit_script_prog', lambda *args: prog)
+    with pytest.raises(mpcsub.SubmissionError, match='two base-62'):
+        mpcsub.format_submit_script('', tmp_path / 'obs.xml',
+                                    mpcsub.SubmissionConfig(target='2025 NC6'))
+
+
+@pytest.mark.parametrize('prog,reply,args,should_send', [
+    ('04', 'submit\n04\n', [], True),
+    ('04', 'submit\n4\n', [], False),
+    ('04', 'submit\n\n', [], False),
+    ('04', 'submit\n', [], False),
+    ('04', '', [], False),
+    ('04', 'submit\n04\n', ['--no-interaction'], False),
+    ('', 'submit\n\n', [], False),
+    ('4', 'submit\n4\n', [], False),
+    ('0!', 'submit\n0!\n', [], False),
+])
+def test_submit_script_program_confirmation_blocks_network(
+        tmp_path, monkeypatch, prog, reply, args, should_send):
+    import os
+    import subprocess
+    monkeypatch.setattr(mpcsub, 'read_generated_ades_xml_summary',
+                        lambda text: ('2025 NC6', '691'))
+    monkeypatch.setattr(mpcsub, 'resolve_submit_script_prog', lambda *args: '04')
+    xml = tmp_path / 'obs.xml'
+    xml.write_text('<ades/>')
+    script = tmp_path / 'submit.sh'
+    text = mpcsub.format_submit_script('', xml,
+                                       mpcsub.SubmissionConfig(target='2025 NC6'))
+    script.write_text(text.replace('PROG=04\n', 'PROG=' + prog + '\n'))
+    stub = tmp_path / 'curl'
+    stub.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$CURL_CAPTURE"\necho STUB_RECEIPT\n')
+    stub.chmod(0o755)
+    capture = tmp_path / 'curl_args.txt'
+    env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ['PATH'],
+               CURL_CAPTURE=str(capture))
+    subprocess.run(['bash', '-n', str(script)], check=True)
+    result = subprocess.run(['bash', str(script), *args], input=reply,
+                            text=True, capture_output=True, env=env)
+    assert (result.returncode == 0) == should_send
+    assert capture.exists() == should_send
+    if should_send:
+        assert 'prog=04' in capture.read_text().splitlines()
+        assert result.stdout.count('STUB_RECEIPT') == 1

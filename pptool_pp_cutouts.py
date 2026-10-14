@@ -307,7 +307,11 @@ def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec,
     with fits.open(str(source_fits), memmap=False,
                    ignore_missing_end=True) as hdulist:
         header = hdulist[0].header.copy()
-        data = np.asarray(hdulist[0].data, dtype=np.float32)
+        data = np.asarray(hdulist[0].data)
+        # Preserve floating-point detector values for native cutouts. Integer
+        # arrays must be promoted because partial cutouts use NaN padding.
+        if not np.issubdtype(data.dtype, np.floating):
+            data = data.astype(np.float32)
         source_wcs = WCS(header, relax=True)
 
     x, y = source_wcs.world_to_pixel(target)
@@ -326,7 +330,7 @@ def _build_cutout(source_fits, ra_deg, dec_deg, size_arcsec,
             cutout = Cutout2D(
                 data, position=(x, y), size=(size_px, size_px),
                 wcs=source_wcs, mode="partial", fill_value=np.nan, copy=True)
-            cutout_data = cutout.data.astype(np.float32)
+            cutout_data = np.array(cutout.data, copy=True)
             cutout_wcs = cutout.wcs
             overlap = bool(np.isfinite(cutout_data).any())
         except NoOverlapError:

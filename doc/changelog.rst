@@ -4,6 +4,13 @@ Changelog
 Major changes to the pipeline since 2016-10-01 (see `Mommert 2017`_) are
 documented here.
 
+* 2026-07-16: added ``pptool_arc35arctic.py`` for ARC 3.5-m/ARCTIC
+  clicked pair stacks. The helper reconstructs chronological pairs from
+  ``INFILnnn`` provenance, preserves accurate cumulative exposure and
+  photon-weighted timing, performs a PSF/motion/constituent verification gate,
+  and only then permits Gaia-refined PP photometry and review-only station-705
+  ADES output.
+
 * 2026-06-25: ``pptool_mpcsubmission.py`` now writes an executable
   ``submit_mpc_<target>_ADES.sh`` sidecar next to each generated ADES XML
   file. The script targets the live MPC XML endpoint, prints the resolved

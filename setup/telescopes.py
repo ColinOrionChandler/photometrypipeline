@@ -353,11 +353,13 @@ arc35arctic_param = {
     # pp_prepare
     'object': 'OBJNAME',  # object name keyword
     'filter': 'FILTER',  # filter keyword
-    'filter_translations': {'SDSS U': 'u', 'SDSS G': 'g', 'SDSS R': 'r',
-                              'SDSS I': 'i', 'SDSS Z': 'z', 'clear': None,
-                              'CU VR': 'r', 'SDSS r':'r', 'SDSS i':'i', 'SDSS g':'g', 'SDSS z':'z', # 9/5/2024 COC
-                              'SDSS r #1': 'r', # 3/31/2026 COC
-                            },
+    'filter_translations': {'u': 'u', 'g': 'g', 'r': 'r', 'i': 'i',
+                              'z': 'z', 'SDSS U': 'u', 'SDSS G': 'g',
+                              'SDSS R': 'r', 'SDSS I': 'i', 'SDSS Z': 'z',
+                              'clear': None, 'CU VR': 'r', 'CUVR': 'r',
+                              'CUVR 5in': 'r', 'CU VR 5in': 'r', 'SDSS r': 'r',
+                              'SDSS i': 'i', 'SDSS g': 'g', 'SDSS z': 'z',
+                              'SDSS g #1': 'g', 'SDSS r #1': 'r'},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword

@@ -1,17 +1,9 @@
 import math
-import os
-from pathlib import Path
-import sys
 
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-os.environ["PHOTPIPEDIR"] = str(REPO_ROOT)
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 import pptool_fink_cometary_activity as fink_activity
 

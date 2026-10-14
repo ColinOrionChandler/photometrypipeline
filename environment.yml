@@ -1,0 +1,14 @@
+# Development environment with the external programs PP calls.
+#   conda env create -f environment.yml
+#   conda activate photometrypipeline
+#   pip install -e '.[dev]'
+name: photometrypipeline
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - astromatic-source-extractor
+  - astromatic-scamp
+  - astromatic-swarp
+  - cfitsio

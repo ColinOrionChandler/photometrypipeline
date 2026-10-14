@@ -1,0 +1,42 @@
+# End-to-end pipeline run with the real Source Extractor/SCAMP/SWarp binaries
+# from conda-forge (the same builds used locally via environment.yml) and live
+# catalog queries. Too slow and network-dependent for every push, so it runs
+# weekly and on demand.
+
+name: Integration test
+
+on:
+  schedule:
+    - cron: 30 7 * * 1
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  MPLBACKEND: Agg
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Set up conda environment with the astromatic tools
+      uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+      with:
+        environment-file: environment.yml
+        cache-environment: true
+    - name: Install package
+      run: |
+        python -m pip install -e .[dev]
+        sex --version || source-extractor --version
+        scamp --version
+    - name: Run integration tests
+      run: |
+        python -m pytest -m integration -o log_cli=true -vv

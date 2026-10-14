@@ -1,14 +1,7 @@
 import csv
-import os
 from pathlib import Path
-import sys
 
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-os.environ["PHOTPIPEDIR"] = str(REPO_ROOT)
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 import pptool_dima_export as dima
 
@@ -175,7 +168,7 @@ def test_export_with_mocked_mpc_and_horizons_uses_current_pp_shape(tmp_path, mon
         "Research/Objects/Lost Small Bodies/objects/Centaurs/1998_QJ1/CASU/"
         "WHT/Prime/PP/photometry_1998_QJ1_combined.csv"
     )
-    if not combined.exists():
+    if not combined.exists() or combined.stat().st_size == 0:  # missing or online-only placeholder
         pytest.skip("real PP combined CSV is not available")
 
     raw_payload = {"mock": True}

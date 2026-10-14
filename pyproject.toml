@@ -1,0 +1,264 @@
+
+[project]
+name = "photometrypipeline"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [
+    { name = "Michael Mommert", email = "mommermiscience@gmail.com" },
+    { name = "Colin Orion Chandler", email = "coc123@uw.edu" },
+]
+description = "Automated photometry pipeline for imaging data from small and medium-sized telescopes (fork of mommermi/photometrypipeline)"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+]
+dynamic = ["version"]
+requires-python = ">=3.11"
+dependencies = [
+    "astropy",
+    "astroquery>=0.4.7",
+    "future", # Python 2 compatibility shims (past.builtins.execfile, old_div); to be removed
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "pillow",
+    "requests",
+    "scikit-image",
+    "scipy",
+]
+
+[project.urls]
+"Source Code" = "https://github.com/ColinOrionChandler/photometrypipeline"
+"Upstream" = "https://github.com/mommermi/photometrypipeline"
+"Documentation" = "https://photometrypipeline.readthedocs.io/"
+
+# On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
+[project.optional-dependencies]
+mpc = [
+    "lxml", # ADES XML schema validation in pptool_mpcsubmission
+]
+legacy = [
+    "callhorizons", # only used by pptool_psfsub
+]
+dev = [
+    "jupyter", # Clears output from Jupyter notebooks
+    "lxml",
+    "pre-commit", # Used to run checks before finalizing a git commit
+    "pytest",
+    "pytest-cov", # Used to report total code coverage
+    "ruff", # Used for static linting of files
+]
+# Command-line scripts that can be run after installing the package
+[project.scripts]
+photometrypipeline_version = "photometrypipeline_cli.photometrypipeline_version:main"
+
+[build-system]
+requires = [
+    "setuptools>=77", # Used to build and package the Python project; >=77 for SPDX license strings
+    "setuptools_scm>=8", # Gets release version from git. Makes it available programmatically
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "src/photometrypipeline/_version.py"
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+    "src",
+    "docs",
+]
+# Phase 1 of the src/ migration: the pipeline modules still live at the repository root.
+pythonpath = ["."]
+addopts = "--doctest-modules --doctest-glob=*.rst -m 'not integration'"
+markers = [
+    "integration: runs Source Extractor/SCAMP/SWarp and queries online catalogs (pytest -m integration)",
+    "network: needs internet access",
+]
+log_cli_level = "INFO"
+
+[tool.ruff]
+line-length = 110
+# pre-commit passes file names explicitly; honor the excludes below anyway
+force-exclude = true
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    "W",
+    # Pyflakes
+    "F",
+    # pep8-naming
+    "N",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # docstrings
+    "D101",
+    "D102",
+    "D103",
+    "D106",
+    "D206",
+    "D207",
+    "D208",
+    "D300",
+    "D417",
+    "D419",
+    # Numpy v2.0 compatibility
+    "NPY201",
+    ]
+ignore = [
+    "UP006", # Allow non standard library generics in type hints
+    "UP007", # Allow Union in type hints
+    "SIM114", # Allow if with same arms
+    "B028", # Allow default warning level
+    "SIM117", # Allow nested with
+    "UP015", # Allow redundant open parameters
+    "UP028", # Allow yield in for loop
+]
+
+[tool.ruff.format]
+# TEMPORARY: legacy modules are reformatted in one dedicated commit (lint plan L1).
+exclude = [
+    "_pp_conf.py",
+    "catalog.py",
+    "diagnostics.py",
+    "doc/conf.py",
+    "pp_calibrate.py",
+    "pp_combine.py",
+    "pp_distill.py",
+    "pp_extract.py",
+    "pp_manident.py",
+    "pp_photometry.py",
+    "pp_prepare.py",
+    "pp_register.py",
+    "pp_run.py",
+    "pp_setup.py",
+    "pp_stackedphotometry.py",
+    "pptool_arc35arctic.py",
+    "pptool_arcsat.py",
+    "pptool_catalina_lemmon60.py",
+    "pptool_cfht_cfh12k.py",
+    "pptool_cfht_megacam.py",
+    "pptool_cometary_activity.py",
+    "pptool_cometary_student_stack.py",
+    "pptool_dima_export.py",
+    "pptool_efosc2.py",
+    "pptool_fink_cometary_activity.py",
+    "pptool_forced_photometry.py",
+    "pptool_mpcreport.py",
+    "pptool_mpcsubmission.py",
+    "pptool_panstarrs1.py",
+    "pptool_pp_cutouts.py",
+    "pptool_psfsub.py",
+    "pptool_reduced_data.py",
+    "pptool_reduced_results.py",
+    "pptool_reference_cutouts.py",
+    "pptool_sdss.py",
+    "pptool_spacewatch.py",
+    "pptool_submit_ades_to_mpc.py",
+    "pptool_wht_prime.py",
+    "setup/telescopes.py",
+    "tests/test_arc35arctic.py",
+    "tests/test_arcsat.py",
+    "tests/test_catalina_lemmon60.py",
+    "tests/test_cfht_cfh12k.py",
+    "tests/test_cfht_megacam.py",
+    "tests/test_cometary_activity.py",
+    "tests/test_cometary_student_stack.py",
+    "tests/test_dima_export.py",
+    "tests/test_efosc2.py",
+    "tests/test_fink_cometary_activity.py",
+    "tests/test_forced_photometry.py",
+    "tests/test_mpcsubmission.py",
+    "tests/test_panstarrs1.py",
+    "tests/test_pp_cutouts.py",
+    "tests/test_reduced_data.py",
+    "tests/test_reduced_results.py",
+    "tests/test_reference_cutouts.py",
+    "tests/test_sdss.py",
+    "tests/test_spacewatch.py",
+    "tests/test_submit_ades_to_mpc.py",
+    "tests/test_wht_prime.py",
+    "toolbox.py",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The template intends tests/.ruff.toml to relax docstring rules for tests; keep that here.
+"tests/**/*.py" = ["D100", "D101", "D102", "D103"]
+# BEGIN TEMPORARY LEGACY BASELINE: generated with ruff 0.17.0 on the pre-migration code.
+# Entries may only be removed; the block must be empty by the end of the migration.
+"_pp_conf.py" = ["F401", "F403", "I001", "UP010", "UP036"]
+"catalog.py" = ["B006", "B905", "D101", "D102", "D208", "E402", "E713", "E722", "E741", "F841", "I001", "N801", "N806", "SIM210", "UP004", "UP031", "UP032", "UP034", "W291", "W293"]
+"diagnostics.py" = ["B007", "B905", "D101", "D102", "D208", "E722", "F403", "F405", "F841", "I001", "N801", "SIM105", "SIM115", "UP031", "UP032", "UP034", "UP036", "UP039", "W605"]
+"doc/conf.py" = ["F401", "I001", "UP009", "UP025"]
+"pp_calibrate.py" = ["B007", "B023", "B904", "E402", "E722", "F403", "F405", "F811", "I001", "N806", "SIM102", "SIM105", "SIM108", "SIM115", "UP029", "UP031", "UP032", "UP034", "UP036"]
+"pp_combine.py" = ["B904", "D208", "F401", "I001", "SIM102", "SIM115", "UP010", "UP029", "UP031", "UP032", "UP036"]
+"pp_distill.py" = ["D103", "D208", "E713", "E722", "F403", "F405", "F841", "I001", "SIM102", "SIM115", "UP024", "UP029", "UP031", "UP032", "UP036"]
+"pp_extract.py" = ["D208", "E721", "F401", "F403", "F405", "I001", "SIM102", "SIM115", "UP010", "UP029", "UP031", "UP033", "UP036"]
+"pp_manident.py" = ["D101", "D208", "E501", "F401", "F403", "F405", "I001", "SIM115", "UP004", "UP010", "UP029", "UP031", "UP036"]
+"pp_photometry.py" = ["B007", "D103", "D208", "E713", "E721", "F403", "F405", "I001", "SIM102", "SIM115", "UP029", "UP031", "UP036"]
+"pp_prepare.py" = ["B904", "D208", "E722", "F403", "I001", "SIM102", "SIM105", "UP024", "UP029", "UP031", "UP032", "UP034", "UP036"]
+"pp_register.py" = ["B007", "B904", "D208", "F401", "F403", "F405", "I001", "SIM115", "UP010", "UP029", "UP031", "UP032", "UP036"]
+"pp_run.py" = ["B007", "D208", "F401", "F403", "F841", "I001", "SIM108", "UP010", "UP024", "UP029", "UP031", "UP032", "UP034", "UP036"]
+"pp_setup.py" = ["I001", "UP039"]
+"pp_stackedphotometry.py" = ["D208", "F401", "F403", "I001", "SIM102", "SIM108", "SIM115", "UP010", "UP029", "UP031", "UP036"]
+"pptool_arc35arctic.py" = ["D103", "I001", "UP031"]
+"pptool_arcsat.py" = ["B904", "B905", "D103", "I001", "UP024", "UP031"]
+"pptool_catalina_lemmon60.py" = ["D103", "I001", "UP010", "UP031"]
+"pptool_cfht_cfh12k.py" = ["D103", "I001", "SIM108", "UP010", "UP031"]
+"pptool_cfht_megacam.py" = ["D103", "I001", "SIM108", "UP010", "UP031"]
+"pptool_cometary_activity.py" = ["B905", "D101", "D103", "E501", "F401", "I001", "SIM102", "SIM108", "UP017", "UP031", "UP035"]
+"pptool_cometary_student_stack.py" = ["B905", "D103", "F401", "I001", "UP031"]
+"pptool_dima_export.py" = ["D101", "D102", "D103", "I001", "SIM118", "UP031", "UP035"]
+"pptool_efosc2.py" = ["D103", "E501", "I001", "UP010", "UP031"]
+"pptool_fink_cometary_activity.py" = ["B905", "D103", "I001", "UP017", "UP031"]
+"pptool_forced_photometry.py" = ["B905", "D103", "F401", "I001", "SIM108", "UP031"]
+"pptool_mpcreport.py" = ["D208", "F401", "F403", "F405", "F841", "I001", "SIM115", "UP010", "UP029", "UP030", "UP031", "UP032"]
+"pptool_mpcsubmission.py" = ["B905", "D101", "D102", "D103", "E501", "F401", "I001", "SIM108", "UP017", "UP031", "UP035"]
+"pptool_panstarrs1.py" = ["D103", "I001", "UP010", "UP024", "UP031"]
+"pptool_pp_cutouts.py" = ["D103", "I001", "UP024", "UP031"]
+"pptool_psfsub.py" = ["D103", "D208", "E721", "F401", "F403", "F405", "I001", "SIM102", "SIM115", "UP010", "UP029", "UP036"]
+"pptool_reduced_data.py" = ["D103", "E402", "I001", "UP031"]
+"pptool_reduced_results.py" = ["B905", "D103", "I001", "UP031"]
+"pptool_reference_cutouts.py" = ["D103", "F401", "I001", "UP024", "UP031"]
+"pptool_sdss.py" = ["D103", "E402", "I001", "UP024", "UP031"]
+"pptool_spacewatch.py" = ["D103", "I001", "UP031"]
+"pptool_submit_ades_to_mpc.py" = ["D101", "D103", "I001", "UP017", "UP031"]
+"pptool_wht_prime.py" = ["D103", "I001", "UP024", "UP031"]
+"setup/mytelescopes.py" = ["F821"]
+"setup/telescopes.py" = ["E501", "F601", "F821", "SIM105", "UP024"]
+"tests/test_arc35arctic.py" = ["I001", "UP031"]
+"tests/test_arcsat.py" = ["I001"]
+"tests/test_catalina_lemmon60.py" = ["I001"]
+"tests/test_cfht_cfh12k.py" = ["I001", "UP031"]
+"tests/test_cfht_megacam.py" = ["I001", "UP031"]
+"tests/test_cometary_activity.py" = ["I001", "UP031"]
+"tests/test_cometary_student_stack.py" = ["I001"]
+"tests/test_efosc2.py" = ["F401", "I001", "UP031"]
+"tests/test_fink_cometary_activity.py" = ["B007", "I001"]
+"tests/test_forced_photometry.py" = ["I001", "UP031"]
+"tests/test_mpcsubmission.py" = ["E501", "I001", "UP031"]
+"tests/test_panstarrs1.py" = ["I001"]
+"tests/test_pp_cutouts.py" = ["UP032"]
+"tests/test_reduced_data.py" = ["I001"]
+"tests/test_reference_cutouts.py" = ["N802", "UP031"]
+"tests/test_sdss.py" = ["E501", "I001"]
+"tests/test_spacewatch.py" = ["I001"]
+"tests/test_submit_ades_to_mpc.py" = ["F401", "I001", "UP031"]
+"tests/test_wht_prime.py" = ["I001"]
+"toolbox.py" = ["B007", "D208", "F401", "I001", "N806", "SIM108", "SIM115", "UP010", "UP029", "UP031", "UP036"]
+# END TEMPORARY LEGACY BASELINE
+
+
+[tool.coverage.run]
+omit=["src/photometrypipeline/_version.py"]

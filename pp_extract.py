@@ -31,6 +31,8 @@ import subprocess
 import logging
 import argparse
 import shlex
+import shutil
+import functools
 from multiprocessing import Pool
 from astropy.io import fits
 
@@ -66,19 +68,19 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 version = '1.0'
 
-# Determine the Source Extractor executable name: sex or sextractor.
-for cmd in ['sex', 'sextractor', 'source-extractor']:
-    try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
-        del p
-        break
-    except OSError:
-        continue
-else:
+
+@functools.lru_cache(maxsize=None)
+def _sextractor_cmd():
+    """Return the Source Extractor executable name found on PATH.
+
+    Looked up on first use rather than at import, so that importing this
+    module does not require Source Extractor to be installed.
+    """
+    for cmd in ['sex', 'sextractor', 'source-extractor']:
+        if shutil.which(cmd) is not None:
+            return cmd
     raise FileNotFoundError('Source Extractor command not found.')
-sextractor_cmd = cmd
-del cmd
+
 
 # extractor class definition
 
@@ -132,7 +134,7 @@ def extract_singleframe(data):
         optionstring += ' -DEBLEND_MINCONT 1 '
 
     commandline = '%s -c %s %s %s' % \
-                  (sextractor_cmd,
+                  (_sextractor_cmd(),
                    param['obsparam']['sex-config-file'],
                    optionstring, filename)
     logging.info('call Source Extractor as: %s' % commandline)
@@ -251,8 +253,9 @@ def extract_multiframe(filenames, parameters):
         parameters['obsparam'] = _pp_conf.telescope_parameters[
             parameters['telescope']]
     except KeyError:
-        print("ERROR: telescope '%s' is unknown." % telescope)
-        logging.critical('ERROR: telescope \'%s\' is unknown.' % telescope)
+        print("ERROR: telescope '%s' is unknown." % parameters['telescope'])
+        logging.critical('ERROR: telescope \'%s\' is unknown.' %
+                         parameters['telescope'])
         return {}
 
     # set aperture photometry DIAMETER as string

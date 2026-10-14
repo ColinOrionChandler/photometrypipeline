@@ -31,3 +31,8 @@ __pycache__/
 *.cat
 **/.diagnostics
 .DS_Store
+
+# science outputs and run logs live outside the repo
+/PP/
+/analysis_results/
+LOG

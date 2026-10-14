@@ -1,0 +1,28 @@
+# Changes here will be overwritten by Copier
+_commit: v2.3.0
+_src_path: gh:lincc-frameworks/python-project-template
+author_email: coc123@uw.edu
+author_name: Colin Orion Chandler
+create_example_module: false
+custom_install: custom
+enforce_style:
+- ruff_lint
+- ruff_format
+failure_notification: []
+include_benchmarks: false
+include_dev_guide: true
+include_docs: true
+include_notebooks: false
+mypy_type_checking: none
+package_name: photometrypipeline
+project_description: Automated photometry pipeline for imaging data from small and
+    medium-sized telescopes (fork of mommermi/photometrypipeline)
+project_license: GPL3
+project_name: photometrypipeline
+project_organization: ColinOrionChandler
+python_versions:
+- '3.11'
+- '3.12'
+- '3.13'
+- '3.14'
+test_lowest_version: none

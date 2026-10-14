@@ -118,7 +118,7 @@ def extract_singleframe(data):
 
     if 'mask_file' in param:
         optionstring += ' -WEIGHT_TYPE MAP_WEIGHT'
-        optionstring += ' -WEIGHT_IMAGE %s' % param['mask_file']
+        optionstring += ' -WEIGHT_IMAGE %s' % shlex.quote(param['mask_file'])
 
     if 'paramfile' in param:
         optionstring += ' -PARAMETERS_NAME %s' % param['paramfile']
@@ -288,8 +288,7 @@ def extract_multiframe(filenames, parameters):
     output = pool.map(extract_singleframe, data)
 
     # check if extraction was successful
-    if any(['catalog_data' not in list(output[i].keys())
-            for i in range(len(output))]):
+    if any(item is None or 'catalog_data' not in item for item in output):
         return None
 
     # output content

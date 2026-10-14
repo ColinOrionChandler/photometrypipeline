@@ -26,6 +26,8 @@ import re
 import os
 import gc
 import sys
+import copy
+from contextlib import contextmanager
 try:
     import numpy as np
 except ImportError:
@@ -53,6 +55,7 @@ import pp_register
 import pp_photometry
 import pp_calibrate
 import pp_distill
+import toolbox
 from diagnostics import registration as diag
 
 # setup logging
@@ -62,14 +65,14 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     datefmt=_pp_conf.log_datefmt)
 
 
-def run_the_pipeline(filenames, man_targetname, man_filtername,
-                     fixed_aprad, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs,
-                     telescope=None, nodeblending=False,
-                     variable_stars=False, fixed_targets_file=None,
-                     posfile=None, offset=None, magzp=None,
-                     magzp_keyword=None, magzp_sig_keyword=None,
-                     magzp_sig=None, rejectionfilter='pos'):
+def _run_the_pipeline(filenames, man_targetname, man_filtername,
+                      fixed_aprad, source_tolerance, solar,
+                      rerun_registration, asteroids, keep_wcs,
+                      telescope=None, nodeblending=False,
+                      variable_stars=False, fixed_targets_file=None,
+                      posfile=None, offset=None, magzp=None,
+                      magzp_keyword=None, magzp_sig_keyword=None,
+                      magzp_sig=None, rejectionfilter='pos'):
     """
     wrapper to run the photometry pipeline
     """
@@ -367,6 +370,122 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     gc.collect()  # collect garbage; just in case, you never know...
 
 
+def _telescope_for_mask(filename, telescope=None):
+    """Resolve the PP telescope key used by a run-scoped mask."""
+
+    if telescope is not None:
+        if telescope not in _pp_conf.telescope_parameters:
+            raise KeyError("unknown telescope/instrument %s" % telescope)
+        return telescope
+
+    with fits.open(filename, ignore_missing_end=True) as hdulist:
+        header = hdulist[0].header
+        instrument = None
+        for key in _pp_conf.instrument_keys:
+            if key in header:
+                instrument = header[key]
+                break
+    if instrument is None:
+        raise KeyError("cannot identify telescope/instrument for mask")
+    if instrument in _pp_conf.instrument_identifiers:
+        return _pp_conf.instrument_identifiers[instrument]
+    if instrument in _pp_conf.telescope_parameters:
+        return instrument
+    raise KeyError("unknown telescope/instrument %s" % instrument)
+
+
+def validate_mask_file(mask_file, filenames):
+    """Validate and return an absolute Source Extractor weight-map path."""
+
+    mask_path = os.path.abspath(os.path.expanduser(str(mask_file)))
+    if not os.path.isfile(mask_path):
+        raise IOError("mask file does not exist: %s" % mask_path)
+    with fits.open(mask_path, memmap=False, ignore_missing_end=True) as hdulist:
+        mask_data = hdulist[0].data
+        if mask_data is None or mask_data.ndim != 2:
+            raise ValueError("mask must contain one two-dimensional image")
+        mask_shape = tuple(mask_data.shape)
+        if not np.all(np.isfinite(mask_data)):
+            raise ValueError("mask contains non-finite weights")
+        if np.any(mask_data < 0):
+            raise ValueError("mask contains negative weights")
+
+    for filename in filenames:
+        with fits.open(filename, memmap=True,
+                       ignore_missing_end=True) as hdulist:
+            image_data = hdulist[0].data
+            image_shape = (None if image_data is None
+                           else tuple(image_data.shape))
+        if image_shape != mask_shape:
+            raise ValueError(
+                "mask shape %s does not match %s shape %s" %
+                (mask_shape, filename, image_shape))
+    return mask_path
+
+
+def _source_extractor_mask_path(mask_path):
+    """Prefer a whitespace-free path accepted by Source Extractor itself."""
+
+    candidates = [os.path.relpath(mask_path, os.getcwd()), mask_path]
+    for candidate in candidates:
+        if not any(character.isspace() for character in candidate):
+            return candidate
+    raise ValueError(
+        "Source Extractor mask path cannot contain whitespace; place the "
+        "mask within a whitespace-free relative path from the image directory")
+
+
+@contextmanager
+def telescope_mask_override(filenames, telescope=None, mask_file=None):
+    """Install a mask on a copied telescope config for one PP run only."""
+
+    if mask_file is None:
+        yield None
+        return
+    if not filenames:
+        raise ValueError("cannot apply a mask without input images")
+
+    mask_path = validate_mask_file(mask_file, filenames)
+    extractor_mask_path = _source_extractor_mask_path(mask_path)
+    telescope_key = _telescope_for_mask(filenames[0], telescope=telescope)
+    original = _pp_conf.telescope_parameters[telescope_key]
+    override = copy.deepcopy(original)
+    with fits.open(filenames[0], ignore_missing_end=True) as hdulist:
+        binning = toolbox.get_binning(hdulist[0].header, override)
+    bin_string = "%d,%d" % (binning[0], binning[1])
+    override.setdefault("mask_file", {})[bin_string] = extractor_mask_path
+    _pp_conf.telescope_parameters[telescope_key] = override
+    try:
+        yield extractor_mask_path
+    finally:
+        _pp_conf.telescope_parameters[telescope_key] = original
+
+
+def run_the_pipeline(filenames, man_targetname, man_filtername,
+                     fixed_aprad, source_tolerance, solar,
+                     rerun_registration, asteroids, keep_wcs,
+                     telescope=None, nodeblending=False,
+                     variable_stars=False, fixed_targets_file=None,
+                     posfile=None, offset=None, magzp=None,
+                     magzp_keyword=None, magzp_sig_keyword=None,
+                     magzp_sig=None, rejectionfilter='pos', mask_file=None):
+    """Run PP, optionally with a validated run-scoped weight map."""
+
+    with telescope_mask_override(filenames, telescope=telescope,
+                                 mask_file=mask_file):
+        return _run_the_pipeline(
+            filenames, man_targetname, man_filtername,
+            fixed_aprad, source_tolerance, solar,
+            rerun_registration, asteroids, keep_wcs,
+            telescope=telescope, nodeblending=nodeblending,
+            variable_stars=variable_stars,
+            fixed_targets_file=fixed_targets_file,
+            posfile=posfile, offset=offset, magzp=magzp,
+            magzp_keyword=magzp_keyword,
+            magzp_sig_keyword=magzp_sig_keyword,
+            magzp_sig=magzp_sig, rejectionfilter=rejectionfilter)
+
+
 if __name__ == '__main__':
 
     # command line arguments
@@ -400,6 +519,9 @@ if __name__ == '__main__':
                         help='keep wcs information and skip registration',
                         action="store_true", default=False)
     parser.add_argument('-telescope', help='manually specify telescope name',
+                        default=None)
+    parser.add_argument('-mask', help=('run-scoped Source Extractor '
+                                      'MAP_WEIGHT FITS file'),
                         default=None)
     parser.add_argument('-nodeblending',
                         help='skip deblending in the registration phase',
@@ -441,6 +563,8 @@ if __name__ == '__main__':
     rejectionfilter = args.reject
     keep_wcs = args.keep_wcs
     telescope = args.telescope
+    mask_file = (None if args.mask is None else
+                 os.path.abspath(os.path.expanduser(args.mask)))
     nodeblending = args.nodeblending
     variable_stars = args.variable_stars
     offset = [float(coo) for coo in args.offset]
@@ -501,7 +625,8 @@ if __name__ == '__main__':
                                  magzp_keyword=magzp_keyword,
                                  magzp_sig_keyword=magzp_sig_keyword,
                                  magzp_sig=magzp_sig,
-                                 rejectionfilter=rejectionfilter)
+                                 rejectionfilter=rejectionfilter,
+                                 mask_file=mask_file)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -518,5 +643,6 @@ if __name__ == '__main__':
                          magzp=magzp, magzp_keyword=magzp_keyword,
                          magzp_sig_keyword=magzp_sig_keyword,
                          magzp_sig=magzp_sig,
-                         rejectionfilter=rejectionfilter)
+                         rejectionfilter=rejectionfilter,
+                         mask_file=mask_file)
         pass

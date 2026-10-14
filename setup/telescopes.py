@@ -53,7 +53,9 @@ vatt4k_param = {
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
     'filter': 'FILTER',  # filter keyword
-    'filter_translations': {'upper: Clear  lower: I':'I',
+    'filter_translations': {'TOP 2 BOT 1': 'V', 'TOP 3 BOT 1': 'R',
+      'TOP 4 BOT 1': 'I', 'TOP 5 BOT 1': 'B',
+      'upper: Clear  lower: I':'I',
       'upper: Clear  lower: Clear':'R',
       'upper: Clear  lower: V':'V', 'upper: Clear  lower: R':'R',
       'upper: I  lower: Clear':'I', 'upper: V  lower: Clear':'V','upper: R  lower: Clear':'R', 'upper: Clear  lower: r':'r', 'upper: z  lower: Clear':'z', 'upper: Clear  lower: GG495':'R',

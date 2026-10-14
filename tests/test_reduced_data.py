@@ -1,20 +1,13 @@
 import argparse
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 
 import numpy as np
 import pytest
 from astropy.io import fits
 from astropy.time import Time
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-os.environ["PHOTPIPEDIR"] = str(REPO_ROOT)
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 import _pp_conf
 import pp_extract
@@ -198,6 +191,7 @@ def test_source_extractor_keeps_spaced_mask_path_as_one_argument(
         captured.append(command)
         return DummyProcess()
 
+    monkeypatch.setattr(pp_extract, "_sextractor_cmd", lambda: "sex")
     monkeypatch.setattr(pp_extract.subprocess, "Popen", fake_popen)
     parameters = {
         "aperture_diam": "8", "source_minarea": 3,

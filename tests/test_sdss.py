@@ -1,17 +1,10 @@
-import os
 from pathlib import Path
-import sys
 
 import numpy as np
 from astropy import units as u
 from astropy.io import fits
 from astropy.time import Time
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-os.environ["PHOTPIPEDIR"] = str(REPO_ROOT)
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 import _pp_conf
 import pptool_sdss as sdss

@@ -1,0 +1,5 @@
+# setuptools_scm adds every git-tracked file to the sdist; keep the large
+# FITS masks, example images and the legacy Sphinx tree out of it.
+prune setup
+prune example_data
+prune doc

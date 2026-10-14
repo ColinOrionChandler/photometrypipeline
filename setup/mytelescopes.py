@@ -24,72 +24,65 @@ Personal Photometry Pipeline Configuation File
 
 # MYTELESCOPE setup parameters
 mytelescope_param = {
-    'telescope_instrument': 'Telescope/Instrument',  # telescope/instrument name
-    'telescope_keyword': 'mytelescope',  # telescope/instrument keyword
-    'observatory_code': '695',  # MPC observatory code
-    'secpix': (0.1, 0.1),  # pixel size (arcsec) before binning
-
+    "telescope_instrument": "Telescope/Instrument",  # telescope/instrument name
+    "telescope_keyword": "mytelescope",  # telescope/instrument keyword
+    "observatory_code": "695",  # MPC observatory code
+    "secpix": (0.1, 0.1),  # pixel size (arcsec) before binning
     # image orientation preferences
-    'flipx': True,
-    'flipy': False,
-    'rotate': 0,
-
+    "flipx": True,
+    "flipy": False,
+    "rotate": 0,
     # instrument-specific FITS header keywords
-    'binning': ('CCDBIN1', 'CCDBIN2'),  # binning in x/y
-    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
-    'ra': 'RA',  # telescope pointing, RA
-    'dec': 'DEC',  # telescope pointin, Dec
-    'radec_separator': ':',  # RA/Dec hms separator, use 'XXX'
+    "binning": ("CCDBIN1", "CCDBIN2"),  # binning in x/y
+    "extent": ("NAXIS1", "NAXIS2"),  # N_pixels in x/y
+    "ra": "RA",  # telescope pointing, RA
+    "dec": "DEC",  # telescope pointin, Dec
+    "radec_separator": ":",  # RA/Dec hms separator, use 'XXX'
     # if already in degrees
-    'date_keyword': 'DATE-OBS',  # obs date/time
+    "date_keyword": "DATE-OBS",  # obs date/time
     # keyword; use
     # 'date|time' if
     # separate
-    'obsmidtime_jd': 'MJD-OBS',  # obs midtime jd keyword
+    "obsmidtime_jd": "MJD-OBS",  # obs midtime jd keyword
     # (usually provided by
     # pp_prepare
-    'object': 'OBJECT',  # object name keyword
-    'filter': 'FILTER',  # filter keyword
-    'filter_translations': {'g stuff': 'g'},
+    "object": "OBJECT",  # object name keyword
+    "filter": "FILTER",  # filter keyword
+    "filter_translations": {"g stuff": "g"},
     # filtername translation dictionary
-    'exptime': 'EXPTIME',  # exposure time keyword (s)
-    'airmass': 'AIRMASS',  # airmass keyword
-
+    "exptime": "EXPTIME",  # exposure time keyword (s)
+    "airmass": "AIRMASS",  # airmass keyword
     # source extractor settings
-    'source_minarea': 12,  # default sextractor source minimum N_pixels
-    'source_snr': 3,  # default sextractor source snr for registration
-    'aprad_default': 5,  # default aperture radius in px
-    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
-    'sex-config-file': rootpath + '/setup/mytelescope.sex',
-    'mask_file': {},
+    "source_minarea": 12,  # default sextractor source minimum N_pixels
+    "source_snr": 3,  # default sextractor source snr for registration
+    "aprad_default": 5,  # default aperture radius in px
+    "aprad_range": [2, 10],  # [minimum, maximum] aperture radius (px)
+    "sex-config-file": rootpath + "/setup/mytelescope.sex",
+    "mask_file": {},
     #                        mask files as a function of x,y binning
-
     # scamp settings
-    'scamp-config-file': rootpath + '/setup/mytelescope.scamp',
-    'reg_max_mag': 19,
-    'reg_search_radius': 0.5,  # deg
-    'source_tolerance': 'high',
-    
+    "scamp-config-file": rootpath + "/setup/mytelescope.scamp",
+    "reg_max_mag": 19,
+    "reg_search_radius": 0.5,  # deg
+    "source_tolerance": "high",
     # swarp settings
-    'copy_keywords': ('OBSERVAT,INSTRUME,EXPTIME,OBJECT,' +
-                      'DATE-OBS,TEL_KEYW'),
+    "copy_keywords": ("OBSERVAT,INSTRUME,EXPTIME,OBJECT," + "DATE-OBS,TEL_KEYW"),
     #                        keywords to be copied in image
     #                        combination using swarp
-    'swarp-config-file': rootpath+'/setup/mytelescope.swarp',
-
+    "swarp-config-file": rootpath + "/setup/mytelescope.swarp",
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['SDSS-R9', 'APASS9', '2MASS']
+    "astrometry_catalogs": ["GAIA"],
+    "photometry_catalogs": ["SDSS-R9", "APASS9", "2MASS"],
 }
 
 # add telescope configurations to 'official' telescopes.py
 
-implemented_telescopes.append('MYTELESCOPE')
+implemented_telescopes.append("MYTELESCOPE")
 
 # translate INSTRUME (or others, see _pp_conf.py) header keyword into
 #   PP telescope keyword
 # example: INSTRUME keyword in header is 'mytel'
-instrument_identifiers['instrume_identifier'] = 'MYTELESCOPE'
+instrument_identifiers["instrume_identifier"] = "MYTELESCOPE"
 
 # translate telescope keyword into parameter set defined here
-telescope_parameters['MYTELESCOPE'] = mytelescope_param
+telescope_parameters["MYTELESCOPE"] = mytelescope_param

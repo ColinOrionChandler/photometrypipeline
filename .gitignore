@@ -149,3 +149,35 @@ _html/
 # Project initialization script
 .initialize_new_project.sh
 
+
+# photometrypipeline: editor and scratch files
+*~
+*/#*
+#*#
+dump/
+*e4p
+/frost*
+.idea/
+
+# photometrypipeline: user telescope overrides and runtime caches
+setup/mytelescopes.py
+doc/_build/
+.cache/
+ppident_asteroids*
+ppident_variablestars*
+.eric6project/
+
+# photometrypipeline: pipeline products written next to the images
+*.db
+*.ldac
+*.html
+*.xml
+*.dat
+*.lst
+*.cat
+**/.diagnostics
+
+# photometrypipeline: science outputs and run logs live outside the repo
+/PP/
+/analysis_results/
+LOG

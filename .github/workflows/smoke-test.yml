@@ -16,6 +16,10 @@ on:
 
 permissions: {}
 
+# matplotlib is imported at module level by the pipeline; never open a display
+env:
+  MPLBACKEND: Agg
+
 jobs:
   build:
 
